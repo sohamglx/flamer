@@ -30,113 +30,19 @@ flamer = "https://github.com/shoya-129/flamer"
 ```flame
 import flamer
 
-// Define route handlers outside @Flamer scope for full access to flamer package helpers:
-fn handleHome() {
-    return flamer.html("<h1>Welcome to Flamer!</h1>")
-}
-
-fn handleUsers() {
-    return flamer.json(["Alice", "Bob", "Charlie"])
-}
-
-fn handleEcho(body: Formula) {
-    return body
-}
-
-@flamer.Flamer(port: 3000)
-async fn main() {
-    // Register routes
-    flamer.get("/", handleHome)
-    flamer.get("/api/users", handleUsers)
-    flamer.post("/api/echo", handleEcho)
-
-    await flamer.listen()
-}
-
-await main()
-```
-
----
-
-## ⚠️ Scope Notice & Handler Architecture
-
-### Why does `flamer.json()` or `flamer.html()` fail inside `@Flamer`?
-When you annotate a function with `@Flamer(port: 3000)` (or `@flamer.Flamer`), Flame injects a local variable named `flamer` into the function scope. This local variable is the **`FlamerServer` instance** (providing `.get()`, `.post()`, `.listen()`, etc.), which **shadows** the imported package `flamer`.
-
-Because of this shadowing:
-- Calling `flamer.json(...)` or other package-level helpers inside the `@Flamer` function or its inline closures fails because `flamer` is the server instance, not the package.
-- Calling bare `html(...)` or `json(...)` without named imports fails because they are not imported into the global namespace.
-
----
-
-### Solution 1: Define Handlers Outside `@Flamer` Scope (Recommended)
-Defining route handler functions **outside** of the `@Flamer` function scope is the cleanest, most modular architectural pattern:
-
-```flame
-import flamer
-
-// Handlers are defined in module scope:
-fn getHome() {
-    return flamer.html("<h1>Hello from Flamer!</h1>")
-}
-
-fn getUsers() {
-    return flamer.json(["Alice", "Bob"])
-}
-
-@flamer.Flamer(port: 3000)
-async fn main() {
-    flamer.get("/", getHome)
-    flamer.get("/api/users", getUsers)
-
-    await flamer.listen()
-}
-
-await main()
-```
-
----
-
-### Solution 2: Named Imports (for Inline Closures)
-If you prefer writing inline closures inside `@Flamer`, import the helper functions directly:
-
-```flame
-import flamer.{Flamer, html, json, text, status, notFound}
-
 @Flamer(port: 3000)
 async fn main() {
+    // Route shortcuts
     flamer.get("/", () {
-        html("<h1>Hello from Flamer!</h1>")
+        flamer.html("<h1>Welcome to Flamer!</h1>")
     })
 
     flamer.get("/api/users", () {
-        json(["Alice", "Bob"])
+        flamer.json(["Alice", "Bob", "Charlie"])
     })
 
-    await flamer.listen()
-}
-
-await main()
-```
-
----
-
-### Solution 3: Alias the Package Import
-You can also alias the package when importing to prevent any name collision between the package and the injected `flamer` server instance:
-
-```flame
-import flamer as f
-
-@f.Flamer(port: 3000)
-async fn main() {
-    // `flamer` is the FlamerServer instance
-    // `f` is the flamer package
-    flamer.get("/", () {
-        f.html("<h1>Hello from Flamer!</h1>")
-    })
-
-    flamer.get("/api/users", () {
-        f.json(["Alice", "Bob"])
+    flamer.post("/api/echo", (body) {
+        return body
     })
 
     await flamer.listen()

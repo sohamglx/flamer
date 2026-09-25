@@ -155,6 +155,28 @@ pub fn init() -> FlamerServer {
     }
 }
 
+/// Normalizes an Express-style route pattern (e.g. `/users/:id` or `/api/*`)
+/// into an Axum-compliant route pattern (e.g. `/users/{id}` or `/api/{*wildcard}`).
+fn normalize_path(path: &str) -> &'static str {
+    let mut normalized = String::new();
+    let parts: Vec<&str> = path.split('/').collect();
+    for (i, part) in parts.iter().enumerate() {
+        if i > 0 {
+            normalized.push('/');
+        }
+        if let Some(param) = part.strip_prefix(':') {
+            normalized.push('{');
+            normalized.push_str(param);
+            normalized.push('}');
+        } else if *part == "*" {
+            normalized.push_str("{*wildcard}");
+        } else {
+            normalized.push_str(part);
+        }
+    }
+    Box::leak(normalized.into_boxed_str())
+}
+
 impl FlamerServer {
     /// Set the port number on which the server will listen.
     #[flame(rename = "setPort")]
@@ -184,7 +206,8 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        self.router = mem::take(&mut self.router).route(path, get(handler));
+        let p = normalize_path(path);
+        self.router = mem::take(&mut self.router).route(p, get(handler));
     }
 
     /// Registers a POST route handler.
@@ -193,7 +216,8 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        self.router = mem::take(&mut self.router).route(path, post(handler));
+        let p = normalize_path(path);
+        self.router = mem::take(&mut self.router).route(p, post(handler));
     }
 
     /// Registers a PUT route handler.
@@ -202,7 +226,8 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        self.router = mem::take(&mut self.router).route(path, put(handler));
+        let p = normalize_path(path);
+        self.router = mem::take(&mut self.router).route(p, put(handler));
     }
 
     /// Registers a DELETE route handler.
@@ -211,7 +236,8 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        self.router = mem::take(&mut self.router).route(path, delete(handler));
+        let p = normalize_path(path);
+        self.router = mem::take(&mut self.router).route(p, delete(handler));
     }
 
     /// Registers a PATCH route handler.
@@ -220,7 +246,8 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        self.router = mem::take(&mut self.router).route(path, patch(handler));
+        let p = normalize_path(path);
+        self.router = mem::take(&mut self.router).route(p, patch(handler));
     }
 
     /// Registers a HEAD route handler.
@@ -229,7 +256,8 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        self.router = mem::take(&mut self.router).route(path, head(handler));
+        let p = normalize_path(path);
+        self.router = mem::take(&mut self.router).route(p, head(handler));
     }
 
     /// Registers an OPTIONS route handler.
@@ -238,7 +266,8 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        self.router = mem::take(&mut self.router).route(path, options(handler));
+        let p = normalize_path(path);
+        self.router = mem::take(&mut self.router).route(p, options(handler));
     }
 
     /// Registers a TRACE route handler.
@@ -247,7 +276,8 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        self.router = mem::take(&mut self.router).route(path, trace(handler));
+        let p = normalize_path(path);
+        self.router = mem::take(&mut self.router).route(p, trace(handler));
     }
 
     /// Registers a route matching any HTTP method.
@@ -256,7 +286,23 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        self.router = mem::take(&mut self.router).route(path, any(handler));
+        let p = normalize_path(path);
+        self.router = mem::take(&mut self.router).route(p, any(handler));
+    }
+
+    /// Returns a JSON response string with explicit Flamer marker.
+    pub fn json(&self, content: String) -> String {
+        format!("<!--flamer:json-->{}", content)
+    }
+
+    /// Returns an HTML response string with explicit Flamer marker.
+    pub fn html(&self, content: String) -> String {
+        format!("<!--flamer:html-->{}", content)
+    }
+
+    /// Returns a plain text response string.
+    pub fn text(&self, content: String) -> String {
+        content
     }
 
     /// Returns the underlying Axum Router instance with auto content-type detection.
@@ -287,21 +333,6 @@ impl FlamerServer {
         axum::serve(listener, app)
             .await
             .map_err(std::io::Error::other)
-    }
-
-    /// Helper on the server instance to return an HTML response string.
-    pub fn html(&self, content: String) -> String {
-        content
-    }
-
-    /// Helper on the server instance to return a plain text response string.
-    pub fn text(&self, content: String) -> String {
-        content
-    }
-
-    /// Helper on the server instance to return a 200 OK response string.
-    pub fn ok(&self, body: String) -> String {
-        body
     }
 }
 
@@ -491,3 +522,53 @@ pub fn path_filter(prefix: String, path: String) -> bool {
     let pth = path.trim_end_matches('/');
     pth == pfx || pth.starts_with(&format!("{}/", pfx))
 }
+
+/// Helper to construct a JSON response with explicit Flamer marker.
+#[flame(rename = "json")]
+pub fn json_response(content: String) -> String {
+    format!("<!--flamer:json-->{}", content)
+}
+
+/// Helper to construct an HTML response with explicit Flamer marker.
+#[flame(rename = "html")]
+pub fn html_response(content: String) -> String {
+    format!("<!--flamer:html-->{}", content)
+}
+
+/// Helper to construct a plain text response.
+#[flame(rename = "text")]
+pub fn text_response(content: String) -> String {
+    content
+}
+
+/// Constructs a new Response object with body, status code, and content type.
+#[flame(rename = "response")]
+pub fn response_create(body: String, status: i64, content_type: String) -> Response {
+    Response {
+        body,
+        status,
+        content_type,
+    }
+}
+
+/// Extracts a specific path parameter from a pattern and path.
+#[flame(rename = "getPathParam")]
+pub fn get_path_param(pattern: String, path: String, key: String) -> String {
+    let pat_clean = pattern.trim_matches('/');
+    let path_clean = path.trim_matches('/');
+
+    let pat_segments: Vec<&str> = pat_clean.split('/').collect();
+    let path_segments: Vec<&str> = path_clean.split('/').collect();
+
+    for (i, seg) in pat_segments.iter().enumerate() {
+        if let Some(param) = seg.strip_prefix(':') {
+            if param == key && i < path_segments.len() {
+                return path_segments[i].to_string();
+            }
+        } else if *seg == "*" && key == "wildcard" && i < path_segments.len() {
+            return path_segments[i..].join("/");
+        }
+    }
+    String::new()
+}
+

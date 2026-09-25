@@ -4,35 +4,28 @@
 
 Leverages the high performance of Rust **Axum** and **Tokio** under the hood with a clean, expressive Flame API.
 
-#### ✨ Features
-- **⚡ High Performance**: Native async I/O powered by Tokio & Axum
+#### Features
+- **High Performance**: Native async I/O powered by Tokio & Axum
 - **Expressive Routing**: Intuitive HTTP shortcuts (`get`, `post`, `put`, `delete`, `patch`, `head`, `options`, `any`)
 - **Path Filtering & Extraction**: Named parameter extraction (`extractPathParams`), wildcards, and prefix checks (`matchPath`, `pathFilter`)
 - **Query String Parsing**: Instant query string decoding (`parseQuery`, `getQueryParam`)
 - **Response Helpers**: Built-in helpers for `json()`, `html()`, `text()`, `redirect()`, `status()`, and error responses
 - **Scope Injection**: `@Flamer(port: 3000)` injects the server instance directly into local scope
 
-#### ⚠️ Scope Notice & Recommended Architecture
-When using `@Flamer(port: 3000)`, the local identifier `flamer` inside the function is bound to the **FlamerServer instance**, which shadows the imported `flamer` package.
-Package-level helpers (`flamer.html()`, `flamer.json()`, `flamer.status()`, etc.) cannot be accessed on the server instance inside closures.
-
-**Recommended Pattern**: Define your route handlers **outside** of the `@Flamer` function scope. Outside `@Flamer`, `flamer` is the package module, so all helpers work smoothly:
-
+#### Quick Example
 ```flame
 import flamer
 
-fn handleHome() {
-    return flamer.html('<h1>Hello from Flamer!</h1>')
-}
-
-fn handleUsers() {
-    return flamer.json(['Alice', 'Bob'])
-}
-
-@flamer.Flamer(port: 3000)
+@Flamer(port: 3000)
 async fn main() {
-    flamer.get('/', handleHome)
-    flamer.get('/api/users', handleUsers)
+    flamer.get('/', () {
+        html('<h1>Hello from Flamer!</h1>')
+    })
+
+    flamer.get('/api/users', () {
+        json(['Alice', 'Bob'])
+    })
+
     await flamer.listen()
 }
 
@@ -42,6 +35,9 @@ await main()
 package flamer
 import native.flamer_server
 import std.json as json_mod
+
+
+export let mut routeRegistry: [Formula] = []
 
 @Docs("Helper function to create a new Response object with body, status code, and content type.
 
@@ -56,63 +52,63 @@ export fn response(body: String, status: Int = 200, contentType: String = "text/
     return res
 }
 
+@Docs("Returns the list of all registered route configurations.")
+export fn getRegisteredRoutes() -> [Formula] {
+    return routeRegistry
+}
+
+@Docs("Clears all pending registered route configurations from the registry.")
+export fn clearRegisteredRoutes() {
+    routeRegistry = []
+}
+
+@Docs("Applies all registered routes from annotations to a FlamerServer instance.")
+export fn applyRoutes(s: &FlamerServer) {
+    let len = routeRegistry.len()
+    let mut i = 0
+    while i < len {
+        let r = routeRegistry[i]
+        if r.handler != nil {
+            if r.method == "GET" {
+                s.get(r.path, r.handler)
+            } else if r.method == "POST" {
+                s.post(r.path, r.handler)
+            } else if r.method == "PUT" {
+                s.put(r.path, r.handler)
+            } else if r.method == "DELETE" {
+                s.delete(r.path, r.handler)
+            } else if r.method == "PATCH" {
+                s.patch(r.path, r.handler)
+            } else if r.method == "HEAD" {
+                s.head(r.path, r.handler)
+            } else if r.method == "OPTIONS" {
+                s.options(r.path, r.handler)
+            } else {
+                s.any(r.path, r.handler)
+            }
+        }
+        i += 1
+    }
+}
+
 @Docs("Initializes and configures a Flamer Server with optional port and host.
 
-When used as an annotation on an async function, it injects the `flamer` server instance directly into the local scope.
+When used as an annotation on an async function, it injects the `flamer` server instance directly into the local scope and automatically applies all registered routes.
 
-> ⚠️ **Warning / Scope Notice**:
-> Inside an `@Flamer`-annotated function, the identifier `flamer` refers to the local `FlamerServer` instance, **not** the imported `flamer` package.
-> As a result, package-level helper functions (such as `flamer.json()`, `flamer.html()`, `flamer.status()`, etc.) are **not** accessible via `flamer.` inside the annotated function or inside closures defined directly within it.
->
-> **Best Practice (Recommended Architecture)**:
-> Define your route handler functions **outside** of the `@Flamer` function scope. Outside `@Flamer`, `flamer` refers to the package module, allowing full access to all helpers:
-> ```flame
-> import flamer
-> 
-> fn handleHome() {
->     return flamer.html('<h1>Hello from Flamer!</h1>')
-> }
-> 
-> fn handleUsers() {
->     return flamer.json(['Alice', 'Bob'])
-> }
-> 
-> @flamer.Flamer(port: 3000)
-> async fn main() {
->     flamer.get('/', handleHome)
->     flamer.get('/api/users', handleUsers)
->     await flamer.listen()
-> }
-> 
-> await main()
-> ```
->
-> **Alternative 1: Named Imports (for inline closures):**
-> ```flame
-> import flamer.{Flamer, html, json, text}
-> 
-> @Flamer(port: 3000)
-> async fn main() {
->     flamer.get('/', () { html('<h1>Hello!</h1>') })
->     flamer.get('/api/users', () { json(['Alice', 'Bob']) })
->     await flamer.listen()
-> }
-> ```
->
-> **Alternative 2: Alias the Package Import:**
-> ```flame
-> import flamer as f
-> 
-> @f.Flamer(port: 3000)
-> async fn main() {
->     flamer.get('/', () { f.html('<h1>Hello!</h1>') })
->     await flamer.listen()
-> }
-> ```")
+**Example:**
+```flame
+@Flamer(port: 3000)
+async fn main() {
+    flamer.get('/', () { 'Welcome to Flamer!' })
+    await flamer.listen()
+}
+await main()
+```")
 export annotation Flamer(port: Int = 3000, host: String = "127.0.0.1") -> FlamerServer {
-    let s = flamer_server.init()
+    let mut s = flamer_server.init()
     s.setPort(port)
     s.setHost(host)
+    applyRoutes(&s)
     return s
 }
 
@@ -125,18 +121,21 @@ app.get('/ping', () { 'pong' })
 await app.listen()
 ```")
 export fn server(port: Int = 3000, host: String = "127.0.0.1") -> FlamerServer {
-    let s = flamer_server.init()
+    let mut s = flamer_server.init()
     s.setPort(port)
     s.setHost(host)
+    applyRoutes(&s)
     return s
 }
 
 @Docs("Initializes a default FlamerServer instance listening on 127.0.0.1:3000.")
 export fn init() -> FlamerServer {
-    return flamer_server.init()
+    let mut s = flamer_server.init()
+    applyRoutes(&s)
+    return s
 }
 
-@Docs("Route shortcut annotation marking an HTTP GET endpoint.
+@Docs("Route shortcut annotation marking an HTTP GET endpoint. Can also be called directly to register a route.
 
 **Example:**
 ```flame
@@ -145,14 +144,18 @@ fn listUsers() {
     json(['alice', 'bob'])
 }
 ```")
-export annotation Get(path: String = "/") -> Formula {
-    return formula {
+export annotation Get(path: String = "/", handler: Unknown = nil) -> Formula {
+    let r = formula {
         method: "GET",
-        path: path
+        path: path,
+        extracted: path,
+        handler: handler
     }
+    routeRegistry.push(r)
+    return r
 }
 
-@Docs("Route shortcut annotation marking an HTTP POST endpoint.
+@Docs("Route shortcut annotation marking an HTTP POST endpoint. Can also be called directly to register a route.
 
 **Example:**
 ```flame
@@ -162,51 +165,75 @@ fn createUser(body: Formula) {
     return body
 }
 ```")
-export annotation Post(path: String = "/") -> Formula {
-    return formula {
+export annotation Post(path: String = "/", handler: Unknown = nil) -> Formula {
+    let r = formula {
         method: "POST",
-        path: path
+        path: path,
+        extracted: path,
+        handler: handler
     }
+    routeRegistry.push(r)
+    return r
 }
 
 @Docs("Route shortcut annotation marking an HTTP PUT endpoint.")
-export annotation Put(path: String = "/") -> Formula {
-    return formula {
+export annotation Put(path: String = "/", handler: Unknown = nil) -> Formula {
+    let r = formula {
         method: "PUT",
-        path: path
+        path: path,
+        extracted: path,
+        handler: handler
     }
+    routeRegistry.push(r)
+    return r
 }
 
 @Docs("Route shortcut annotation marking an HTTP DELETE endpoint.")
-export annotation Delete(path: String = "/") -> Formula {
-    return formula {
+export annotation Delete(path: String = "/", handler: Unknown = nil) -> Formula {
+    let r = formula {
         method: "DELETE",
-        path: path
+        path: path,
+        extracted: path,
+        handler: handler
     }
+    routeRegistry.push(r)
+    return r
 }
 
 @Docs("Route shortcut annotation marking an HTTP PATCH endpoint.")
-export annotation Patch(path: String = "/") -> Formula {
-    return formula {
+export annotation Patch(path: String = "/", handler: Unknown = nil) -> Formula {
+    let r = formula {
         method: "PATCH",
-        path: path
+        path: path,
+        extracted: path,
+        handler: handler
     }
+    routeRegistry.push(r)
+    return r
 }
 
 @Docs("Route shortcut annotation marking an HTTP HEAD endpoint.")
-export annotation Head(path: String = "/") -> Formula {
-    return formula {
+export annotation Head(path: String = "/", handler: Unknown = nil) -> Formula {
+    let r = formula {
         method: "HEAD",
-        path: path
+        path: path,
+        extracted: path,
+        handler: handler
     }
+    routeRegistry.push(r)
+    return r
 }
 
 @Docs("Route shortcut annotation marking an HTTP OPTIONS endpoint.")
-export annotation Options(path: String = "/") -> Formula {
-    return formula {
+export annotation Options(path: String = "/", handler: Unknown = nil) -> Formula {
+    let r = formula {
         method: "OPTIONS",
-        path: path
+        path: path,
+        extracted: path,
+        handler: handler
     }
+    routeRegistry.push(r)
+    return r
 }
 
 @Docs("General route annotation defining the HTTP method and URL path.
@@ -218,11 +245,15 @@ fn health() {
     json({ status: 'ok' })
 }
 ```")
-export annotation Route(path: String = "/", method: String = "GET") -> Formula {
-    return formula {
+export annotation Route(path: String = "/", method: String = "GET", handler: Unknown = nil) -> Formula {
+    let r = formula {
         method: method,
-        path: path
+        path: path,
+        extracted: path,
+        handler: handler
     }
+    routeRegistry.push(r)
+    return r
 }
 
 @Docs("Declares a path filter pattern for route matching or middleware protection.
@@ -235,6 +266,14 @@ fn apiGatekeeper() {}
 export annotation PathFilter(pattern: String = "*") -> Formula {
     return formula {
         pattern: pattern,
+        prefix: pattern,
+        extracted: pattern,
+        matches: (path: String) -> Bool {
+            return matchPath(pattern, path)
+        },
+        filter: (path: String) -> Bool {
+            return pathFilter(pattern, path)
+        },
         kind: "path_filter"
     }
 }
@@ -246,19 +285,33 @@ export annotation PathFilter(pattern: String = "*") -> Formula {
 @Query('search')
 fn searchHandler() {}
 ```")
-export annotation Query(key: String = "") -> Formula {
+export annotation Query(key: String = "", default_val: String = "") -> Formula {
     return formula {
         key: key,
+        param: key,
+        name: key,
+        extracted: key,
+        defaultValue: default_val,
+        get: (source: String = "") -> String {
+            if source == "" {
+                return default_val
+            }
+            return getQueryParam(source, key, default_val)
+        },
+        parse: (query_str: String) -> Unknown {
+            return parseQuery(query_str)
+        },
         kind: "query"
     }
 }
 
 @Docs("Configures Cross-Origin Resource Sharing (CORS) policy for the decorated handler or server.")
-export annotation Cors(origin: String = "*", methods: String = "GET,POST,PUT,DELETE,OPTIONS", headers: String = "*") -> Formula {
+export annotation Cors(origin: String = "*", methods: String = "GET,POST,PUT,DELETE,PATCH,OPTIONS", headers: String = "*") -> Formula {
     return formula {
         origin: origin,
         methods: methods,
         headers: headers,
+        extracted: origin,
         kind: "cors"
     }
 }
@@ -267,6 +320,11 @@ export annotation Cors(origin: String = "*", methods: String = "GET,POST,PUT,DEL
 export annotation Auth(role: String = "user") -> Formula {
     return formula {
         role: role,
+        required: true,
+        extracted: role,
+        check: (userRole: String) -> Bool {
+            return userRole == role
+        },
         kind: "auth"
     }
 }
@@ -275,6 +333,7 @@ export annotation Auth(role: String = "user") -> Formula {
 export annotation Middleware(name: String) -> Formula {
     return formula {
         name: name,
+        extracted: name,
         kind: "middleware"
     }
 }
@@ -298,9 +357,14 @@ let p = extractPathParams('/users/:id/posts/:slug', '/users/42/posts/intro')
 println(p.id)   // '42'
 println(p.slug) // 'intro'
 ```")
-export fn extractPathParams(pattern: String, path: String) -> Object {
+export fn extractPathParams(pattern: String, path: String) -> Formula {
     let json_str = flamer_server.extractPathParamsJson(pattern, path)
-    return json_mod.parse(json_str)
+    return json.parse(json_str)
+}
+
+@Docs("Extracts a specific named path parameter from a pattern and path using native Rust.")
+export fn getPathParam(pattern: String, path: String, key: String) -> String {
+    return flamer_server.getPathParam(pattern, path, key)
 }
 
 @Docs("Checks if a URL path starts with a given prefix filter.
@@ -321,9 +385,9 @@ let q = parseQuery('search=flame&page=1')
 println(q.search) // 'flame'
 println(q.page)   // '1'
 ```")
-export fn parseQuery(query: String) -> Object {
+export fn parseQuery(query: String) -> Formula {
     let json_str = flamer_server.parseQueryJson(query)
-    return json_mod.parse(json_str)
+    return json.parse(json_str)
 }
 
 @Docs("Retrieves the value of a specific query parameter from a query string, with optional default fallback.
@@ -351,7 +415,7 @@ export fn urlDecode(input: String) -> String {
     return flamer_server.urlDecode(input)
 }
 
-@Docs("Helper to construct a JSON response string from any serializable value (Formula, Array, Object).
+@Docs("Helper to construct a JSON response string from any serializable value (Formula, Array, Object) using native Rust flamer plugin.
 
 **Example:**
 ```flame
@@ -359,8 +423,12 @@ flamer.get('/api/data', () {
     json({ success: true, count: 42 })
 })
 ```")
-export fn json(data: Unknown) -> String {
-    return json_mod.stringify(data)
+export fn json(data: Unknown = "") -> String {
+    let s = "" + data
+    if (s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]")) {
+        return flamer_server.json(s)
+    }
+    return flamer_server.json(data.toJson())
 }
 
 @Docs("Helper to construct a plain text response string.
@@ -371,8 +439,8 @@ flamer.get('/ping', () {
     text('pong')
 })
 ```")
-export fn text(content: String) -> String {
-    return content
+export fn text(content: String = "") -> String {
+    return flamer_server.text(content)
 }
 
 @Docs("Helper to construct an HTML response string.
@@ -383,8 +451,8 @@ flamer.get('/', () {
     html('<h1>Welcome to Flamer</h1>')
 })
 ```")
-export fn html(content: String) -> String {
-    return content
+export fn html(content: String = "") -> String {
+    return flamer_server.html(content)
 }
 
 @Docs("Helper to construct a redirect response formula with HTTP 302 or 301.")
