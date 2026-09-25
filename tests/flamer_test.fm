@@ -1,0 +1,105 @@
+import main as flamer
+
+@Test
+fn test_match_path() {
+    assert(flamer.matchPath("/", "/"))
+    assert(flamer.matchPath("/users", "/users"))
+    assert(flamer.matchPath("/users/:id", "/users/123"))
+    assert(flamer.matchPath("/posts/:post_id/comments/:comment_id", "/posts/42/comments/7"))
+    assert(flamer.matchPath("/static/*", "/static/images/logo.png"))
+    assert(!flamer.matchPath("/users", "/posts"))
+}
+
+@Test
+fn test_path_filter() {
+    assert(flamer.pathFilter("/api", "/api/v1/users"))
+    assert(flamer.pathFilter("/api", "/api"))
+    assert(!flamer.pathFilter("/api", "/dashboard"))
+}
+
+@Test
+fn test_extract_path_params() {
+    let p1 = flamer.extractPathParams("/users/:id", "/users/42")
+    assert(p1.id == "42")
+
+    let p2 = flamer.extractPathParams("/teams/:team_id/members/:member_id", "/teams/alpha/members/john")
+    assert(p2.team_id == "alpha")
+    assert(p2.member_id == "john")
+}
+
+@Test
+fn test_query_parsing() {
+    let q = flamer.parseQuery("search=flame&page=2")
+    assert(q.search == "flame")
+    assert(q.page == "2")
+
+    let search_val = flamer.getQueryParam("search=flame&page=2", "search", "")
+    assert(search_val == "flame")
+
+    let missing = flamer.getQueryParam("search=flame", "sort", "asc")
+    assert(missing == "asc")
+}
+
+@Test
+fn test_url_encoding() {
+    let encoded = flamer.urlEncode("hello world")
+    assert(encoded == "hello+world")
+
+    let decoded = flamer.urlDecode(encoded)
+    assert(decoded == "hello world")
+}
+
+@Test
+fn test_response_helpers() {
+    let t = flamer.text("hello text")
+    assert(t == "hello text")
+
+    let h = flamer.html("<h1>Title</h1>")
+    assert(h == "<h1>Title</h1>")
+
+    let o = flamer.ok("All good")
+    assert(o == "All good")
+
+    let red = flamer.redirect("/home", 301)
+    assert(red.status == 301)
+    assert(red.location == "/home")
+
+    let st = flamer.status(404, "Not Found")
+    assert(st.status == 404)
+    assert(st.body == "Not Found")
+
+    let err400 = flamer.badRequest("Invalid input")
+    assert(err400.status == 400)
+    assert(err400.error == "Invalid input")
+
+    let err401 = flamer.unauthorized("Auth required")
+    assert(err401.status == 401)
+
+    let err404 = flamer.notFound("Resource missing")
+    assert(err404.status == 404)
+
+    let err500 = flamer.internalError("Crash")
+    assert(err500.status == 500)
+}
+
+@Test
+fn test_server_creation_and_routing() {
+    let mut app = flamer.server(4000, "127.0.0.1")
+    assert(app.port() == 4000)
+    assert(app.host() == "127.0.0.1")
+
+    app.setPort(5000)
+    assert(app.port() == 5000)
+
+    app.setHost("0.0.0.0")
+    assert(app.host() == "0.0.0.0")
+
+    app.get("/", () { "GET index" })
+    app.post("/submit", (body) { body })
+    app.put("/update", (body) { body })
+    app.delete("/remove", () { "DELETED" })
+    app.patch("/modify", (body) { body })
+    app.head("/ping", () { "" })
+    app.options("/opts", () { "" })
+    app.any("/wildcard", () { "any method" })
+}

@@ -7,4 +7,4 @@ type = "pkg"
 
 
 [plugins]
-flamer = "./native"
+flamer_server = "./native"
