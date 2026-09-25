@@ -17,6 +17,7 @@ pub struct FlamerServer {
     router: Router,
     port: u16,
     host: String,
+    has_custom_fallback: bool,
 }
 
 /// Represents an incoming HTTP request containing body, method, path, and query.
@@ -152,14 +153,20 @@ pub fn init() -> FlamerServer {
         router: Router::new(),
         port: 3000,
         host: "127.0.0.1".to_string(),
+        has_custom_fallback: false,
     }
 }
 
 /// Normalizes an Express-style route pattern (e.g. `/users/:id` or `/api/*`)
 /// into an Axum-compliant route pattern (e.g. `/users/{id}` or `/api/{*wildcard}`).
 fn normalize_path(path: &str) -> &'static str {
+    let p = if !path.starts_with('/') {
+        format!("/{}", path)
+    } else {
+        path.to_string()
+    };
     let mut normalized = String::new();
-    let parts: Vec<&str> = path.split('/').collect();
+    let parts: Vec<&str> = p.split('/').collect();
     for (i, part) in parts.iter().enumerate() {
         if i > 0 {
             normalized.push('/');
@@ -175,6 +182,23 @@ fn normalize_path(path: &str) -> &'static str {
         }
     }
     Box::leak(normalized.into_boxed_str())
+}
+
+/// Helper macro to register routes for both `/path` and `/path/` to avoid 404 on trailing slash mismatch.
+macro_rules! register_route {
+    ($self:ident, $path:expr, $method:ident, $handler:expr) => {{
+        let p = normalize_path($path);
+        let mut r = mem::take(&mut $self.router).route(p, $method($handler.clone()));
+        if p != "/" && !p.ends_with('}') {
+            let alt_p = if p.ends_with('/') {
+                Box::leak(p.trim_end_matches('/').to_string().into_boxed_str())
+            } else {
+                Box::leak(format!("{}/", p).into_boxed_str())
+            };
+            r = r.route(alt_p, $method($handler));
+        }
+        $self.router = r;
+    }};
 }
 
 impl FlamerServer {
@@ -206,8 +230,7 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        let p = normalize_path(path);
-        self.router = mem::take(&mut self.router).route(p, get(handler));
+        register_route!(self, path, get, handler);
     }
 
     /// Registers a POST route handler.
@@ -216,8 +239,7 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        let p = normalize_path(path);
-        self.router = mem::take(&mut self.router).route(p, post(handler));
+        register_route!(self, path, post, handler);
     }
 
     /// Registers a PUT route handler.
@@ -226,8 +248,7 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        let p = normalize_path(path);
-        self.router = mem::take(&mut self.router).route(p, put(handler));
+        register_route!(self, path, put, handler);
     }
 
     /// Registers a DELETE route handler.
@@ -236,8 +257,7 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        let p = normalize_path(path);
-        self.router = mem::take(&mut self.router).route(p, delete(handler));
+        register_route!(self, path, delete, handler);
     }
 
     /// Registers a PATCH route handler.
@@ -246,8 +266,7 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        let p = normalize_path(path);
-        self.router = mem::take(&mut self.router).route(p, patch(handler));
+        register_route!(self, path, patch, handler);
     }
 
     /// Registers a HEAD route handler.
@@ -256,8 +275,7 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        let p = normalize_path(path);
-        self.router = mem::take(&mut self.router).route(p, head(handler));
+        register_route!(self, path, head, handler);
     }
 
     /// Registers an OPTIONS route handler.
@@ -266,8 +284,7 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        let p = normalize_path(path);
-        self.router = mem::take(&mut self.router).route(p, options(handler));
+        register_route!(self, path, options, handler);
     }
 
     /// Registers a TRACE route handler.
@@ -276,8 +293,7 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        let p = normalize_path(path);
-        self.router = mem::take(&mut self.router).route(p, trace(handler));
+        register_route!(self, path, trace, handler);
     }
 
     /// Registers a route matching any HTTP method.
@@ -286,8 +302,17 @@ impl FlamerServer {
         H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
         T: 'static,
     {
-        let p = normalize_path(path);
-        self.router = mem::take(&mut self.router).route(p, any(handler));
+        register_route!(self, path, any, handler);
+    }
+
+    /// Registers a custom fallback handler for unmatched routes.
+    pub fn fallback<H, T>(&mut self, handler: H)
+    where
+        H: axum::handler::Handler<T, ()> + Clone + Send + Sync + 'static,
+        T: 'static,
+    {
+        self.has_custom_fallback = true;
+        self.router = mem::take(&mut self.router).fallback(handler);
     }
 
     /// Returns a JSON response string with explicit Flamer marker.
@@ -307,7 +332,11 @@ impl FlamerServer {
 
     /// Returns the underlying Axum Router instance with auto content-type detection.
     pub fn router(&mut self) -> Router {
-        mem::take(&mut self.router).layer(middleware::from_fn(auto_content_type_middleware))
+        let mut r = mem::take(&mut self.router);
+        if !self.has_custom_fallback {
+            r = r.fallback(default_fallback_handler);
+        }
+        r.layer(middleware::from_fn(auto_content_type_middleware))
     }
 
     /// Starts listening for incoming connections asynchronously on the configured port.
@@ -328,11 +357,119 @@ impl FlamerServer {
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
 
-        let app = mem::take(&mut self.router).layer(middleware::from_fn(auto_content_type_middleware));
+        let mut r = mem::take(&mut self.router);
+        if !self.has_custom_fallback {
+            r = r.fallback(default_fallback_handler);
+        }
+        let app = r.layer(middleware::from_fn(auto_content_type_middleware));
 
         axum::serve(listener, app)
             .await
             .map_err(std::io::Error::other)
+    }
+}
+
+/// Default fallback handler for routes that do not match any registered endpoint.
+/// Returns a clean JSON error response if requested by client or for /api/* routes,
+/// or an aesthetically designed dark-mode HTML 404 page for browser requests.
+async fn default_fallback_handler(req: AxumRequest) -> AxumResponse {
+    let path = req.uri().path().to_string();
+    let method = req.method().to_string();
+
+    let is_json = req
+        .headers()
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.contains("application/json"))
+        .unwrap_or(false)
+        || path.starts_with("/api");
+
+    let status = axum::http::StatusCode::NOT_FOUND;
+
+    if is_json {
+        let json_body = format!(
+            r#"{{"error":"No route found","method":"{}","path":"{}","status":404}}"#,
+            method, path
+        );
+        let mut res = AxumResponse::new(Body::from(json_body));
+        *res.status_mut() = status;
+        res.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json; charset=utf-8"),
+        );
+        res
+    } else {
+        let html_body = format!(
+            r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>404 Not Found - Flamer</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: #000000ff;
+      color: #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1.5rem;
+    }}
+    .badge {{
+      display: inline-block;
+      background: rgba(249, 115, 22, 0.15);
+      color: #f97316;
+      border: 1px solid rgba(249, 115, 22, 0.3);
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      margin-bottom: 1.25rem;
+    }}
+    h1 {{
+      font-size: 2.75rem;
+      font-weight: 800;
+      color: #f8fafc;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.025em;
+    }}
+    h2 {{
+      font-size: 1.35rem;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-bottom: 1.25rem;
+    }}
+    p {{
+      color: #64748b;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+    }}
+  </style>
+</head>
+<body>
+  <div>
+    <div class="badge">🔥 FLAMER SERVER</div>
+    <h1>404</h1>
+    <h2>No Route Found</h2>
+    <p>The requested route could not be found on this server.</p>
+    <p>{} "{}"</p>
+  </div>
+</body>
+</html>"#,
+            method, path
+        );
+        let mut res = AxumResponse::new(Body::from(html_body));
+        *res.status_mut() = status;
+        res.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/html; charset=utf-8"),
+        );
+        res
     }
 }
 
@@ -358,10 +495,9 @@ async fn auto_content_type_middleware(req: AxumRequest, next: Next) -> AxumRespo
             HeaderValue::from_static("text/html; charset=utf-8"),
         );
         let new_bytes = Bytes::copy_from_slice(rest.as_bytes());
-        parts.headers.insert(
-            header::CONTENT_LENGTH,
-            HeaderValue::from(new_bytes.len()),
-        );
+        parts
+            .headers
+            .insert(header::CONTENT_LENGTH, HeaderValue::from(new_bytes.len()));
         return AxumResponse::from_parts(parts, Body::from(new_bytes));
     }
 
@@ -372,10 +508,9 @@ async fn auto_content_type_middleware(req: AxumRequest, next: Next) -> AxumRespo
             HeaderValue::from_static("application/json; charset=utf-8"),
         );
         let new_bytes = Bytes::copy_from_slice(rest.as_bytes());
-        parts.headers.insert(
-            header::CONTENT_LENGTH,
-            HeaderValue::from(new_bytes.len()),
-        );
+        parts
+            .headers
+            .insert(header::CONTENT_LENGTH, HeaderValue::from(new_bytes.len()));
         return AxumResponse::from_parts(parts, Body::from(new_bytes));
     }
 
@@ -571,4 +706,3 @@ pub fn get_path_param(pattern: String, path: String, key: String) -> String {
     }
     String::new()
 }
-

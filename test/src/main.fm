@@ -1,23 +1,22 @@
 import flamer
 
-@Get("/hello")
-fn hello() -> String {
-    return "Hello, world!"
-}
+
 
 
 @Flamer(port: 3000)
-fn main() {
-
+async fn main() {
     flamer.get(
-        '/users', 
+        '/', 
+        () {'Welcome to Flamer!'}
+    )
+    flamer.get(
+        "/users", 
         () {
             json(["alice", 
             "bob", 
             "charlie"])
         }
     )
-
     await flamer.listen()
 }
 

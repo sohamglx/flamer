@@ -13,14 +13,14 @@
 Add `flamer` as a dependency using the Flame package manager:
 
 ```shell
-fmp add https://github.com/shoya-129/flamer
+fmp add https://github.com/sohamglx/flamer
 ```
 
 Alternatively, manually add it to your `flame.toml`:
 
 ```toml
 [dependencies]
-flamer = "https://github.com/shoya-129/flamer"
+flamer = "https://github.com/sohamglx/flamer"
 ```
 
 ---
@@ -157,33 +157,25 @@ Quickly return formatted responses from your handlers:
 
 | Helper | Description | Example |
 | :--- | :--- | :--- |
-| `flamer.json(data)` | Formats Formula / Array as JSON string | `flamer.json({ ok: true })` |
-| `flamer.text(msg)` | Plain text response | `flamer.text("OK")` |
-| `flamer.html(markup)` | HTML response string | `flamer.html("<h1>Title</h1>")` |
-| `flamer.redirect(url, code)` | Redirect response formula (default: 302) | `flamer.redirect("/login")` |
-| `flamer.status(code, body)` | Structured HTTP status formula | `flamer.status(204, "")` |
-| `flamer.ok(msg)` | 200 OK text response | `flamer.ok("Success")` |
-| `flamer.created(data)` | 201 Created formula | `flamer.created({ id: 101 })` |
-| `flamer.badRequest(err)` | 400 Bad Request error formula | `flamer.badRequest("Invalid email")` |
-| `flamer.unauthorized(err)`| 401 Unauthorized error formula | `flamer.unauthorized("Auth required")` |
-| `flamer.forbidden(err)` | 403 Forbidden error formula | `flamer.forbidden("Access denied")` |
-| `flamer.notFound(err)` | 404 Not Found error formula | `flamer.notFound("Item missing")` |
-| `flamer.internalError(err)`| 500 Internal Server Error formula | `flamer.internalError("Database down")` |
+| `json(data)` | Formats Formula / Array as JSON string | `json({ ok: true })` |
+| `text(msg)` | Plain text response | `text("OK")` |
+| `html(markup)` | HTML response string | `html("<h1>Title</h1>")` |
+| `redirect(url, code)` | Redirect response formula (default: 302) | `redirect("/login")` |
+| `status(code, body)` | Structured HTTP status formula | `status(204, "")` |
+| `ok(msg)` | 200 OK text response | `ok("Success")` |
+| `created(data)` | 201 Created formula | `created({ id: 101 })` |
+| `badRequest(err)` | 400 Bad Request error formula | `badRequest("Invalid email")` |
+| `unauthorized(err)`| 401 Unauthorized error formula | `unauthorized("Auth required")` |
+| `forbidden(err)` | 403 Forbidden error formula | `forbidden("Access denied")` |
+| `notFound(err)` | 404 Not Found error formula | `notFound("Item missing")` |
+| `internalError(err)`| 500 Internal Server Error formula | `internalError("Database down")` |
 
 ---
 
 ## Route & Filter Annotations
 
-In addition to programmatic routing, `flamer` exports decorators to annotate handlers:
+In addition to programmatic routing, `flamer` exports annotations to annotate handlers:
 
-- `@Get(path = "/")` - Marks a GET endpoint
-- `@Post(path = "/")` - Marks a POST endpoint
-- `@Put(path = "/")` - Marks a PUT endpoint
-- `@Delete(path = "/")` - Marks a DELETE endpoint
-- `@Patch(path = "/")` - Marks a PATCH endpoint
-- `@Head(path = "/")` - Marks a HEAD endpoint
-- `@Options(path = "/")` - Marks an OPTIONS endpoint
-- `@Route(path = "/", method = "GET")` - Configures custom HTTP method route
 - `@PathFilter(pattern = "*")` - Attaches path filter metadata
 - `@Query(key = "")` - Declares required query parameter
 - `@Cors(origin = "*", methods = "GET,POST,PUT,DELETE,OPTIONS")` - Declares CORS policy
@@ -261,4 +253,4 @@ await main()
 
 ## License
 
-ISC License. Built for [Flame](https://github.com/shoya-129/flame).
+ISC License. Built for [Flame](https://github.com/sohamglx/flame).

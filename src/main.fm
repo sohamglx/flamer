@@ -37,7 +37,7 @@ import native.flamer_server
 import std.json as json_mod
 
 
-export let mut routeRegistry: [Formula] = []
+// export let mut routeRegistry: [Formula] = []
 
 @Docs("Helper function to create a new Response object with body, status code, and content type.
 
@@ -52,44 +52,44 @@ export fn response(body: String, status: Int = 200, contentType: String = "text/
     return res
 }
 
-@Docs("Returns the list of all registered route configurations.")
-export fn getRegisteredRoutes() -> [Formula] {
-    return routeRegistry
-}
+// @Docs("Returns the list of all registered route configurations.")
+// export fn getRegisteredRoutes() -> [Formula] {
+//     return routeRegistry
+// }
 
-@Docs("Clears all pending registered route configurations from the registry.")
-export fn clearRegisteredRoutes() {
-    routeRegistry = []
-}
+// @Docs("Clears all pending registered route configurations from the registry.")
+// export fn clearRegisteredRoutes() {
+//     routeRegistry = []
+// }
 
-@Docs("Applies all registered routes from annotations to a FlamerServer instance.")
-export fn applyRoutes(s: &FlamerServer) {
-    let len = routeRegistry.len()
-    let mut i = 0
-    while i < len {
-        let r = routeRegistry[i]
-        if r.handler != nil {
-            if r.method == "GET" {
-                s.get(r.path, r.handler)
-            } else if r.method == "POST" {
-                s.post(r.path, r.handler)
-            } else if r.method == "PUT" {
-                s.put(r.path, r.handler)
-            } else if r.method == "DELETE" {
-                s.delete(r.path, r.handler)
-            } else if r.method == "PATCH" {
-                s.patch(r.path, r.handler)
-            } else if r.method == "HEAD" {
-                s.head(r.path, r.handler)
-            } else if r.method == "OPTIONS" {
-                s.options(r.path, r.handler)
-            } else {
-                s.any(r.path, r.handler)
-            }
-        }
-        i += 1
-    }
-}
+// @Docs("Applies all registered routes from annotations to a FlamerServer instance.")
+// export fn applyRoutes(s: &FlamerServer) {
+//     let len = routeRegistry.len()
+//     let mut i = 0
+//     while i < len {
+//         let r = routeRegistry[i]
+//         if r.handler != nil {
+//             if r.method == "GET" {
+//                 s.get(r.path, r.handler)
+//             } else if r.method == "POST" {
+//                 s.post(r.path, r.handler)
+//             } else if r.method == "PUT" {
+//                 s.put(r.path, r.handler)
+//             } else if r.method == "DELETE" {
+//                 s.delete(r.path, r.handler)
+//             } else if r.method == "PATCH" {
+//                 s.patch(r.path, r.handler)
+//             } else if r.method == "HEAD" {
+//                 s.head(r.path, r.handler)
+//             } else if r.method == "OPTIONS" {
+//                 s.options(r.path, r.handler)
+//             } else {
+//                 s.any(r.path, r.handler)
+//             }
+//         }
+//         i += 1
+//     }
+// }
 
 @Docs("Initializes and configures a Flamer Server with optional port and host.
 
@@ -108,7 +108,6 @@ export annotation Flamer(port: Int = 3000, host: String = "127.0.0.1") -> Flamer
     let mut s = flamer_server.init()
     s.setPort(port)
     s.setHost(host)
-    applyRoutes(&s)
     return s
 }
 
@@ -124,137 +123,135 @@ export fn server(port: Int = 3000, host: String = "127.0.0.1") -> FlamerServer {
     let mut s = flamer_server.init()
     s.setPort(port)
     s.setHost(host)
-    applyRoutes(&s)
     return s
 }
 
 @Docs("Initializes a default FlamerServer instance listening on 127.0.0.1:3000.")
 export fn init() -> FlamerServer {
     let mut s = flamer_server.init()
-    applyRoutes(&s)
     return s
 }
 
-@Docs("Route shortcut annotation marking an HTTP GET endpoint. Can also be called directly to register a route.
+// @Docs("Route shortcut annotation marking an HTTP GET endpoint. Can also be called directly to register a route.
 
-**Example:**
-```flame
-@Get('/users')
-fn listUsers() {
-    json(['alice', 'bob'])
-}
-```")
-export annotation Get(path: String = "/", handler: Unknown = nil) -> Formula {
-    let r = formula {
-        method: "GET",
-        path: path,
-        extracted: path,
-        handler: handler
-    }
-    routeRegistry.push(r)
-    return r
-}
+// **Example:**
+// ```flame
+// @Get('/users')
+// fn listUsers() {
+//     json(['alice', 'bob'])
+// }
+// ```")
+// export annotation Get(path: String = "/", handler: Unknown = nil) -> Formula {
+//     let r = formula {
+//         method: "GET",
+//         path: path,
+//         extracted: path,
+//         handler: handler
+//     }
+//     routeRegistry.push(r)
+//     return r
+// }
 
-@Docs("Route shortcut annotation marking an HTTP POST endpoint. Can also be called directly to register a route.
+// @Docs("Route shortcut annotation marking an HTTP POST endpoint. Can also be called directly to register a route.
 
-**Example:**
-```flame
-@Post('/users')
-fn createUser(body: Formula) {
-    println('Creating user')
-    return body
-}
-```")
-export annotation Post(path: String = "/", handler: Unknown = nil) -> Formula {
-    let r = formula {
-        method: "POST",
-        path: path,
-        extracted: path,
-        handler: handler
-    }
-    routeRegistry.push(r)
-    return r
-}
+// **Example:**
+// ```flame
+// @Post('/users')
+// fn createUser(body: Formula) {
+//     println('Creating user')
+//     return body
+// }
+// ```")
+// export annotation Post(path: String = "/", handler: Unknown = nil) -> Formula {
+//     let r = formula {
+//         method: "POST",
+//         path: path,
+//         extracted: path,
+//         handler: handler
+//     }
+//     routeRegistry.push(r)
+//     return r
+// }
 
-@Docs("Route shortcut annotation marking an HTTP PUT endpoint.")
-export annotation Put(path: String = "/", handler: Unknown = nil) -> Formula {
-    let r = formula {
-        method: "PUT",
-        path: path,
-        extracted: path,
-        handler: handler
-    }
-    routeRegistry.push(r)
-    return r
-}
+// @Docs("Route shortcut annotation marking an HTTP PUT endpoint.")
+// export annotation Put(path: String = "/", handler: Unknown = nil) -> Formula {
+//     let r = formula {
+//         method: "PUT",
+//         path: path,
+//         extracted: path,
+//         handler: handler
+//     }
+//     routeRegistry.push(r)
+//     return r
+// }
 
-@Docs("Route shortcut annotation marking an HTTP DELETE endpoint.")
-export annotation Delete(path: String = "/", handler: Unknown = nil) -> Formula {
-    let r = formula {
-        method: "DELETE",
-        path: path,
-        extracted: path,
-        handler: handler
-    }
-    routeRegistry.push(r)
-    return r
-}
+// @Docs("Route shortcut annotation marking an HTTP DELETE endpoint.")
+// export annotation Delete(path: String = "/", handler: Unknown = nil) -> Formula {
+//     let r = formula {
+//         method: "DELETE",
+//         path: path,
+//         extracted: path,
+//         handler: handler
+//     }
+//     routeRegistry.push(r)
+//     return r
+// }
 
-@Docs("Route shortcut annotation marking an HTTP PATCH endpoint.")
-export annotation Patch(path: String = "/", handler: Unknown = nil) -> Formula {
-    let r = formula {
-        method: "PATCH",
-        path: path,
-        extracted: path,
-        handler: handler
-    }
-    routeRegistry.push(r)
-    return r
-}
+// @Docs("Route shortcut annotation marking an HTTP PATCH endpoint.")
+// export annotation Patch(path: String = "/", handler: Unknown = nil) -> Formula {
+//     let r = formula {
+//         method: "PATCH",
+//         path: path,
+//         extracted: path,
+//         handler: handler
+//     }
+//     routeRegistry.push(r)
+//     return r
+// }
 
-@Docs("Route shortcut annotation marking an HTTP HEAD endpoint.")
-export annotation Head(path: String = "/", handler: Unknown = nil) -> Formula {
-    let r = formula {
-        method: "HEAD",
-        path: path,
-        extracted: path,
-        handler: handler
-    }
-    routeRegistry.push(r)
-    return r
-}
+// @Docs("Route shortcut annotation marking an HTTP HEAD endpoint.")
+// export annotation Head(path: String = "/", handler: Unknown = nil) -> Formula {
+//     let r = formula {
+//         method: "HEAD",
+//         path: path,
+//         extracted: path,
+//         handler: handler
+//     }
+//     routeRegistry.push(r)
+//     return r
+// }
 
-@Docs("Route shortcut annotation marking an HTTP OPTIONS endpoint.")
-export annotation Options(path: String = "/", handler: Unknown = nil) -> Formula {
-    let r = formula {
-        method: "OPTIONS",
-        path: path,
-        extracted: path,
-        handler: handler
-    }
-    routeRegistry.push(r)
-    return r
-}
+// @Docs("Route shortcut annotation marking an HTTP OPTIONS endpoint.")
+// export annotation Options(path: String = "/", handler: Unknown = nil) -> Formula {
+//     let r = formula {
+//         method: "OPTIONS",
+//         path: path,
+//         extracted: path,
+//         handler: handler
+//     }
+//     routeRegistry.push(r)
+//     return r
+// }
 
-@Docs("General route annotation defining the HTTP method and URL path.
+// @Docs("General route annotation defining the HTTP method and URL path.
 
-**Example:**
-```flame
-@Route(path: '/api/v1/health', method: 'GET')
-fn health() {
-    json({ status: 'ok' })
-}
-```")
-export annotation Route(path: String = "/", method: String = "GET", handler: Unknown = nil) -> Formula {
-    let r = formula {
-        method: method,
-        path: path,
-        extracted: path,
-        handler: handler
-    }
-    routeRegistry.push(r)
-    return r
-}
+// **Example:**
+// ```flame
+// @Route(path: '/api/v1/health', method: 'GET')
+// fn health() {
+//     json({ status: 'ok' })
+// }
+// ```")
+// export annotation Route(path: String = "/", method: String = "GET", handler: Unknown = nil) -> Formula {
+//     let r = formula {
+//         method: method,
+//         path: path,
+//         extracted: path,
+//         handler: handler
+//     }
+//     routeRegistry.push(r)
+//     return r
+// }
 
 @Docs("Declares a path filter pattern for route matching or middleware protection.
 
