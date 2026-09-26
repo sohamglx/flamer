@@ -1,22 +1,80 @@
 import flamer
 
+// 1. Basic endpoint returning a welcome string
+fn hello() -> String {
+    return "Welcome to Flamer!"
+}
 
+// 2. JSON collection endpoint
+fn getUsers() -> String {
+    return json(["alice", "bob", "charlie"])
+}
 
+// 3. @Query annotation: injects `query` directly into handler scope
+@Query("name", "guest")
+fn getName() -> Unknown {
+    let name = query.get()
+    return json({
+        query_key: query.key,
+        default_value: query.defaultValue,
+        name: name
+    })
+}
+
+// 4. @PathFilter annotation: injects `pathfilter` directly into handler scope
+@PathFilter("/users/:userId")
+fn getUserProfile() -> Unknown {
+    let p = pathfilter.extract()
+    let isMatched = pathfilter.matches()
+    return json({
+        pattern: pathfilter.pattern,
+        matched: isMatched,
+        userId: p.userId
+    })
+}
+
+// 5. @Auth annotation: injects `auth` directly into handler scope
+@Auth("admin")
+fn adminOnly() -> Unknown {
+    let isAdmin = auth.check()
+    return json(
+        {
+            required_role: auth.role, 
+            is_admin: isAdmin
+        }
+    )
+}
+
+// 6. @Cors annotation: injects `cors` directly into handler scope
+@Cors(origin: "*", methods: "GET,POST,OPTIONS")
+fn healthCheck() -> Unknown {
+    let allowed = cors.isAllowed()
+    return json(
+        {
+            status: "ok", 
+            origin: cors.origin, 
+            allowed: allowed
+        }
+    )
+}
+
+// 7. @Middleware annotation: injects `middleware` directly into handler scope
+@Middleware("telemetry_logger")
+fn echoPayload(body: String) -> String {
+    println($"[Middleware: {middleware.name}] Handled payload: {body}")
+    return body
+}
 
 @Flamer(port: 3000)
 async fn main() {
-    flamer.get(
-        '/', 
-        () {'Welcome to Flamer!'}
-    )
-    flamer.get(
-        "/users", 
-        () {
-            json(["alice", 
-            "bob", 
-            "charlie"])
-        }
-    )
+    flamer.get("/", hello)
+    flamer.get("/users", getUsers)
+    flamer.get("/n", getName)
+    flamer.get("/users/:userId", getUserProfile)
+    flamer.get("/admin", adminOnly)
+    flamer.get("/health", healthCheck)
+    flamer.post("/echo", echoPayload)
+
     await flamer.listen()
 }
 

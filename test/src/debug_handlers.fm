@@ -1,0 +1,59 @@
+import flamer
+
+@Test
+@PathFilter("/users/:userId")
+fn testPf() {
+    let p = pathfilter.extract()
+    assertEq(p.userId, "1", "Test Pf Failed")
+    assertEq(pathfilter.pattern, "/users/:userId", "Pattern should match")
+}
+
+@Test
+@Query("name", "guest")
+fn testQuery() {
+    assertEq(query.key, "name", "Test Query Failed")
+    assertEq(query.defaultValue, "guest", "Test Query Failed")
+    assertEq(query.get(), "guest", "Test Query Failed")
+}
+
+@Query("name", "guest")
+fn myAnnotatedFn() -> Unknown {
+    let name = query.get()
+    return json(
+        {
+            query_key: query.key, 
+            default_value: query.defaultValue, 
+            name: name
+        }
+    )
+}
+
+@Test
+fn testAnnotatedCall() {
+    println($"myAnnotatedFn value: {myAnnotatedFn}")
+    let res = myAnnotatedFn()
+    println($"myAnnotatedFn call: '{res}'")
+}
+
+@Test
+@Auth("admin")
+fn testAuth() {
+    assertEq(auth.role, "admin", "Role should match")
+    let pass = auth.check("admin")
+    let fail = auth.check("user")
+    assertEq(pass, true, "Admin should pass")
+    assertEq(fail, false, "User should fail")
+}
+
+@Test
+@Cors(origin: "*", methods: "GET,POST,OPTIONS")
+fn testCors() {
+    assertEq(cors.origin, "*", "Origin should match")
+    assertEq(cors.isAllowed("https://example.com"), true, "Should allow any origin")
+}
+
+@Test
+@Middleware("telemetry_logger")
+fn testMiddleware() {
+    assertEq(middleware.name, "telemetry_logger", "Middleware name should match")
+}

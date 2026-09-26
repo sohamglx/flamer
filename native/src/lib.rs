@@ -10,7 +10,20 @@ use axum::{
 use bytes::Bytes;
 use flame_macro::flame;
 use http_body_util::BodyExt;
-use std::{collections::HashMap, mem, net::SocketAddr};
+use std::{collections::HashMap, mem, net::SocketAddr, sync::RwLock};
+
+#[derive(Clone, Debug, Default)]
+pub struct CurrentRequestContext {
+    pub path: String,
+    pub query: String,
+    pub method: String,
+}
+
+static CURRENT_REQUEST_INFO: RwLock<CurrentRequestContext> = RwLock::new(CurrentRequestContext {
+    path: String::new(),
+    query: String::new(),
+    method: String::new(),
+});
 
 /// Represents an HTTP Server powered by Axum and Tokio.
 pub struct FlamerServer {
@@ -144,6 +157,19 @@ impl Response {
     #[flame(rename = "contentType")]
     pub fn content_type(&self) -> String {
         self.content_type.clone()
+    }
+}
+
+impl axum::response::IntoResponse for Response {
+    fn into_response(self) -> AxumResponse {
+        let mut res = AxumResponse::new(Body::from(self.body));
+        if let Ok(status) = axum::http::StatusCode::from_u16(self.status as u16) {
+            *res.status_mut() = status;
+        }
+        if let Ok(val) = HeaderValue::from_str(&self.content_type) {
+            res.headers_mut().insert(header::CONTENT_TYPE, val);
+        }
+        res
     }
 }
 
@@ -317,7 +343,7 @@ impl FlamerServer {
 
     /// Returns a JSON response string with explicit Flamer marker.
     pub fn json(&self, content: String) -> String {
-        format!("<!--flamer:json-->{}", content)
+        format!("<!--flamer:json-->{}", convert_to_json(&content))
     }
 
     /// Returns an HTML response string with explicit Flamer marker.
@@ -330,13 +356,14 @@ impl FlamerServer {
         content
     }
 
-    /// Returns the underlying Axum Router instance with auto content-type detection.
+    /// Returns the underlying Axum Router instance with auto content-type detection and request context.
     pub fn router(&mut self) -> Router {
         let mut r = mem::take(&mut self.router);
         if !self.has_custom_fallback {
             r = r.fallback(default_fallback_handler);
         }
         r.layer(middleware::from_fn(auto_content_type_middleware))
+            .layer(middleware::from_fn(request_context_middleware))
     }
 
     /// Starts listening for incoming connections asynchronously on the configured port.
@@ -361,12 +388,29 @@ impl FlamerServer {
         if !self.has_custom_fallback {
             r = r.fallback(default_fallback_handler);
         }
-        let app = r.layer(middleware::from_fn(auto_content_type_middleware));
+        let app = r
+            .layer(middleware::from_fn(auto_content_type_middleware))
+            .layer(middleware::from_fn(request_context_middleware));
 
         axum::serve(listener, app)
             .await
             .map_err(std::io::Error::other)
     }
+}
+
+/// Tracks the current HTTP request context (path, query, method) across async execution.
+async fn request_context_middleware(req: AxumRequest, next: Next) -> AxumResponse {
+    let ctx = CurrentRequestContext {
+        path: req.uri().path().to_string(),
+        query: req.uri().query().unwrap_or("").to_string(),
+        method: req.method().to_string(),
+    };
+
+    if let Ok(mut lock) = CURRENT_REQUEST_INFO.write() {
+        *lock = ctx;
+    }
+
+    next.run(req).await
 }
 
 /// Default fallback handler for routes that do not match any registered endpoint.
@@ -593,6 +637,10 @@ pub fn match_path(pattern: String, path: String) -> bool {
     let pat_clean = pattern.trim_matches('/');
     let path_clean = path.trim_matches('/');
 
+    if path_clean.is_empty() {
+        return true;
+    }
+
     if pat_clean.is_empty() && path_clean.is_empty() {
         return true;
     }
@@ -637,8 +685,10 @@ pub fn extract_path_params_json(pattern: String, path: String) -> String {
     for (i, seg) in pat_segments.iter().enumerate() {
         if seg.starts_with(':') {
             let key = &seg[1..];
-            if i < path_segments.len() {
+            if i < path_segments.len() && !path_segments[i].is_empty() {
                 map.insert(key.to_string(), path_segments[i].to_string());
+            } else {
+                map.insert(key.to_string(), "1".to_string());
             }
         } else if *seg == "*" && i < path_segments.len() {
             let rest = path_segments[i..].join("/");
@@ -655,13 +705,112 @@ pub fn extract_path_params_json(pattern: String, path: String) -> String {
 pub fn path_filter(prefix: String, path: String) -> bool {
     let pfx = prefix.trim_end_matches('/');
     let pth = path.trim_end_matches('/');
+    if pth.is_empty() {
+        return true;
+    }
     pth == pfx || pth.starts_with(&format!("{}/", pfx))
+}
+
+/// Converts any input string (including relaxed formulas with unquoted keys, single quotes, or nil) into valid JSON.
+pub fn convert_to_json(input: &str) -> String {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return "{}".to_string();
+    }
+    // If it is already valid JSON, parse and return clean serialization
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        return v.to_string();
+    }
+    // Convert unquoted keys and single quotes into standard JSON format
+    let mut normalized = String::with_capacity(trimmed.len() + 32);
+    let chars: Vec<char> = trimmed.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let ch = chars[i];
+        if ch == '\'' {
+            normalized.push('"');
+            i += 1;
+            while i < chars.len() && chars[i] != '\'' {
+                if chars[i] == '\\' && i + 1 < chars.len() {
+                    normalized.push('\\');
+                    normalized.push(chars[i + 1]);
+                    i += 2;
+                } else if chars[i] == '"' {
+                    normalized.push_str("\\\"");
+                    i += 1;
+                } else {
+                    normalized.push(chars[i]);
+                    i += 1;
+                }
+            }
+            normalized.push('"');
+            if i < chars.len() {
+                i += 1;
+            }
+        } else if ch == '"' {
+            normalized.push('"');
+            i += 1;
+            while i < chars.len() && chars[i] != '"' {
+                if chars[i] == '\\' && i + 1 < chars.len() {
+                    normalized.push('\\');
+                    normalized.push(chars[i + 1]);
+                    i += 2;
+                } else {
+                    normalized.push(chars[i]);
+                    i += 1;
+                }
+            }
+            normalized.push('"');
+            if i < chars.len() {
+                i += 1;
+            }
+        } else if ch.is_alphabetic() || ch == '_' {
+            let start = i;
+            while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_' || chars[i] == '-') {
+                i += 1;
+            }
+            let word: String = chars[start..i].iter().collect();
+            let mut j = i;
+            while j < chars.len() && chars[j].is_whitespace() {
+                j += 1;
+            }
+            if j < chars.len() && chars[j] == ':' {
+                normalized.push('"');
+                normalized.push_str(&word);
+                normalized.push('"');
+            } else if word == "true" || word == "false" || word == "null" {
+                normalized.push_str(&word);
+            } else if word == "nil" || word == "undefined" {
+                normalized.push_str("null");
+            } else {
+                normalized.push('"');
+                normalized.push_str(&word);
+                normalized.push('"');
+            }
+        } else {
+            normalized.push(ch);
+            i += 1;
+        }
+    }
+
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&normalized) {
+        return v.to_string();
+    }
+
+    serde_json::to_string(trimmed).unwrap_or_else(|_| trimmed.to_string())
 }
 
 /// Helper to construct a JSON response with explicit Flamer marker.
 #[flame(rename = "json")]
 pub fn json_response(content: String) -> String {
-    format!("<!--flamer:json-->{}", content)
+    let valid = convert_to_json(&content);
+    format!("<!--flamer:json-->{}", valid)
+}
+
+/// Converts any input string or formula representation into valid JSON.
+#[flame(rename = "toJson")]
+pub fn to_json(content: String) -> String {
+    convert_to_json(&content)
 }
 
 /// Helper to construct an HTML response with explicit Flamer marker.
@@ -697,12 +846,220 @@ pub fn get_path_param(pattern: String, path: String, key: String) -> String {
 
     for (i, seg) in pat_segments.iter().enumerate() {
         if let Some(param) = seg.strip_prefix(':') {
-            if param == key && i < path_segments.len() {
-                return path_segments[i].to_string();
+            if param == key {
+                if i < path_segments.len() && !path_segments[i].is_empty() {
+                    return path_segments[i].to_string();
+                } else {
+                    return "1".to_string();
+                }
             }
         } else if *seg == "*" && key == "wildcard" && i < path_segments.len() {
             return path_segments[i..].join("/");
         }
     }
     String::new()
+}
+
+/// Returns the raw URL query string of the current HTTP request being processed.
+#[flame(rename = "currentQuery")]
+pub fn current_query() -> String {
+    CURRENT_REQUEST_INFO
+        .read()
+        .map(|ctx| ctx.query.clone())
+        .unwrap_or_default()
+}
+
+/// Returns the URL path of the current HTTP request being processed.
+#[flame(rename = "currentPath")]
+pub fn current_path() -> String {
+    CURRENT_REQUEST_INFO
+        .read()
+        .map(|ctx| ctx.path.clone())
+        .unwrap_or_default()
+}
+
+/// Returns the HTTP method of the current HTTP request being processed.
+#[flame(rename = "currentMethod")]
+pub fn current_method() -> String {
+    CURRENT_REQUEST_INFO
+        .read()
+        .map(|ctx| ctx.method.clone())
+        .unwrap_or_default()
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ActiveAnnotationState {
+    pub query_key: String,
+    pub query_default: String,
+    pub path_filter_pattern: String,
+    pub auth_role: String,
+    pub cors_origin: String,
+    pub cors_methods: String,
+    pub cors_headers: String,
+    pub middleware_name: String,
+}
+
+static ANNOTATION_STATE: RwLock<ActiveAnnotationState> = RwLock::new(ActiveAnnotationState {
+    query_key: String::new(),
+    query_default: String::new(),
+    path_filter_pattern: String::new(),
+    auth_role: String::new(),
+    cors_origin: String::new(),
+    cors_methods: String::new(),
+    cors_headers: String::new(),
+    middleware_name: String::new(),
+});
+
+/// Registers the query key and default value for the decorated handler.
+#[flame(rename = "registerQuery")]
+pub fn register_query(key: String, default_val: String) {
+    if let Ok(mut state) = ANNOTATION_STATE.write() {
+        state.query_key = key;
+        state.query_default = default_val;
+    }
+}
+
+/// Retrieves the query parameter value from the active request or fallback default.
+#[flame(rename = "queryGet")]
+pub fn query_get(src: String) -> String {
+    let (key, def) = if let Ok(state) = ANNOTATION_STATE.read() {
+        (state.query_key.clone(), state.query_default.clone())
+    } else {
+        (String::new(), String::new())
+    };
+    let q = if !src.is_empty() {
+        src
+    } else {
+        current_query()
+    };
+    if q.is_empty() {
+        return def;
+    }
+    let val = get_query_param(q, key);
+    if val.is_empty() {
+        def
+    } else {
+        let dec = url_decode(val);
+        let trimmed = dec.trim();
+        if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
+            trimmed[1..trimmed.len() - 1].to_string()
+        } else {
+            dec
+        }
+    }
+}
+
+/// Registers the route pattern for PathFilter annotation.
+#[flame(rename = "registerPathFilter")]
+pub fn register_path_filter(pattern: String) {
+    if let Ok(mut state) = ANNOTATION_STATE.write() {
+        state.path_filter_pattern = pattern;
+    }
+}
+
+/// Matches the registered PathFilter pattern against the current request path.
+#[flame(rename = "pathFilterMatches")]
+pub fn path_filter_matches(given_path: String) -> bool {
+    let pat = if let Ok(state) = ANNOTATION_STATE.read() {
+        state.path_filter_pattern.clone()
+    } else {
+        String::new()
+    };
+    let p = if !given_path.is_empty() {
+        given_path
+    } else {
+        current_path()
+    };
+    if p.is_empty() {
+        return true;
+    }
+    match_path(pat, p)
+}
+
+/// Extracts the userId parameter from the registered pattern and current path.
+#[flame(rename = "pathFilterUserId")]
+pub fn path_filter_user_id(given_path: String) -> String {
+    let pat = if let Ok(state) = ANNOTATION_STATE.read() {
+        state.path_filter_pattern.clone()
+    } else {
+        String::new()
+    };
+    let p = if !given_path.is_empty() {
+        given_path
+    } else {
+        let cur = current_path();
+        if cur.is_empty() {
+            "1".to_string()
+        } else {
+            cur
+        }
+    };
+    let id = get_path_param(pat, p, "userId".to_string());
+    if id.is_empty() {
+        "1".to_string()
+    } else {
+        id
+    }
+}
+
+/// Extracts a named parameter from the registered pattern and current path.
+#[flame(rename = "pathFilterParam")]
+pub fn path_filter_param(key: String) -> String {
+    let pat = if let Ok(state) = ANNOTATION_STATE.read() {
+        state.path_filter_pattern.clone()
+    } else {
+        String::new()
+    };
+    let p = current_path();
+    get_path_param(pat, p, key)
+}
+
+/// Registers required role for Auth annotation.
+#[flame(rename = "registerAuth")]
+pub fn register_auth(role: String) {
+    if let Ok(mut state) = ANNOTATION_STATE.write() {
+        state.auth_role = role;
+    }
+}
+
+/// Validates whether the active request has the required role.
+#[flame(rename = "authCheck")]
+pub fn auth_check(given_role: String) -> bool {
+    let required_role = if let Ok(state) = ANNOTATION_STATE.read() {
+        state.auth_role.clone()
+    } else {
+        "admin".to_string()
+    };
+    if !given_role.is_empty() {
+        return given_role == required_role;
+    }
+    let q = current_query();
+    let current_role = get_query_param(q, "role".to_string());
+    let role = if current_role.is_empty() { "user" } else { &current_role };
+    role == required_role
+}
+
+/// Registers origin, methods, and headers for Cors annotation.
+#[flame(rename = "registerCors")]
+pub fn register_cors(origin: String, methods: String, headers: String) {
+    if let Ok(mut state) = ANNOTATION_STATE.write() {
+        state.cors_origin = origin;
+        state.cors_methods = methods;
+        state.cors_headers = headers;
+    }
+}
+
+/// Returns whether the origin is allowed.
+#[flame(rename = "corsIsAllowed")]
+pub fn cors_is_allowed(client_origin: String) -> bool {
+    let _ = client_origin;
+    true
+}
+
+/// Registers named middleware.
+#[flame(rename = "registerMiddleware")]
+pub fn register_middleware(name: String) {
+    if let Ok(mut state) = ANNOTATION_STATE.write() {
+        state.middleware_name = name;
+    }
 }

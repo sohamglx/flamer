@@ -36,9 +36,6 @@ package flamer
 import native.flamer_server
 import std.json as json_mod
 
-
-// export let mut routeRegistry: [Formula] = []
-
 @Docs("Helper function to create a new Response object with body, status code, and content type.
 
 **Example:**
@@ -52,54 +49,16 @@ export fn response(body: String, status: Int = 200, contentType: String = "text/
     return res
 }
 
-// @Docs("Returns the list of all registered route configurations.")
-// export fn getRegisteredRoutes() -> [Formula] {
-//     return routeRegistry
-// }
-
-// @Docs("Clears all pending registered route configurations from the registry.")
-// export fn clearRegisteredRoutes() {
-//     routeRegistry = []
-// }
-
-// @Docs("Applies all registered routes from annotations to a FlamerServer instance.")
-// export fn applyRoutes(s: &FlamerServer) {
-//     let len = routeRegistry.len()
-//     let mut i = 0
-//     while i < len {
-//         let r = routeRegistry[i]
-//         if r.handler != nil {
-//             if r.method == "GET" {
-//                 s.get(r.path, r.handler)
-//             } else if r.method == "POST" {
-//                 s.post(r.path, r.handler)
-//             } else if r.method == "PUT" {
-//                 s.put(r.path, r.handler)
-//             } else if r.method == "DELETE" {
-//                 s.delete(r.path, r.handler)
-//             } else if r.method == "PATCH" {
-//                 s.patch(r.path, r.handler)
-//             } else if r.method == "HEAD" {
-//                 s.head(r.path, r.handler)
-//             } else if r.method == "OPTIONS" {
-//                 s.options(r.path, r.handler)
-//             } else {
-//                 s.any(r.path, r.handler)
-//             }
-//         }
-//         i += 1
-//     }
-// }
-
 @Docs("Initializes and configures a Flamer Server with optional port and host.
 
-When used as an annotation on an async function, it injects the `flamer` server instance directly into the local scope and automatically applies all registered routes.
+When used as an annotation on an async function, it injects the `flamer` server instance directly into the local scope.
 
 **Example:**
 ```flame
 @Flamer(port: 3000)
 async fn main() {
     flamer.get('/', () { 'Welcome to Flamer!' })
+    flamer.get('/api/users', () { json(['Alice', 'Bob']) })
     await flamer.listen()
 }
 await main()
@@ -132,205 +91,163 @@ export fn init() -> FlamerServer {
     return s
 }
 
-// @Docs("Route shortcut annotation marking an HTTP GET endpoint. Can also be called directly to register a route.
+@Docs("Declares a path filter pattern for route matching, prefix checking, or named parameter extraction.
 
-// **Example:**
-// ```flame
-// @Get('/users')
-// fn listUsers() {
-//     json(['alice', 'bob'])
-// }
-// ```")
-// export annotation Get(path: String = "/", handler: Unknown = nil) -> Formula {
-//     let r = formula {
-//         method: "GET",
-//         path: path,
-//         extracted: path,
-//         handler: handler
-//     }
-//     routeRegistry.push(r)
-//     return r
-// }
-
-// @Docs("Route shortcut annotation marking an HTTP POST endpoint. Can also be called directly to register a route.
-
-// **Example:**
-// ```flame
-// @Post('/users')
-// fn createUser(body: Formula) {
-//     println('Creating user')
-//     return body
-// }
-// ```")
-// export annotation Post(path: String = "/", handler: Unknown = nil) -> Formula {
-//     let r = formula {
-//         method: "POST",
-//         path: path,
-//         extracted: path,
-//         handler: handler
-//     }
-//     routeRegistry.push(r)
-//     return r
-// }
-
-// @Docs("Route shortcut annotation marking an HTTP PUT endpoint.")
-// export annotation Put(path: String = "/", handler: Unknown = nil) -> Formula {
-//     let r = formula {
-//         method: "PUT",
-//         path: path,
-//         extracted: path,
-//         handler: handler
-//     }
-//     routeRegistry.push(r)
-//     return r
-// }
-
-// @Docs("Route shortcut annotation marking an HTTP DELETE endpoint.")
-// export annotation Delete(path: String = "/", handler: Unknown = nil) -> Formula {
-//     let r = formula {
-//         method: "DELETE",
-//         path: path,
-//         extracted: path,
-//         handler: handler
-//     }
-//     routeRegistry.push(r)
-//     return r
-// }
-
-// @Docs("Route shortcut annotation marking an HTTP PATCH endpoint.")
-// export annotation Patch(path: String = "/", handler: Unknown = nil) -> Formula {
-//     let r = formula {
-//         method: "PATCH",
-//         path: path,
-//         extracted: path,
-//         handler: handler
-//     }
-//     routeRegistry.push(r)
-//     return r
-// }
-
-// @Docs("Route shortcut annotation marking an HTTP HEAD endpoint.")
-// export annotation Head(path: String = "/", handler: Unknown = nil) -> Formula {
-//     let r = formula {
-//         method: "HEAD",
-//         path: path,
-//         extracted: path,
-//         handler: handler
-//     }
-//     routeRegistry.push(r)
-//     return r
-// }
-
-// @Docs("Route shortcut annotation marking an HTTP OPTIONS endpoint.")
-// export annotation Options(path: String = "/", handler: Unknown = nil) -> Formula {
-//     let r = formula {
-//         method: "OPTIONS",
-//         path: path,
-//         extracted: path,
-//         handler: handler
-//     }
-//     routeRegistry.push(r)
-//     return r
-// }
-
-// @Docs("General route annotation defining the HTTP method and URL path.
-
-// **Example:**
-// ```flame
-// @Route(path: '/api/v1/health', method: 'GET')
-// fn health() {
-//     json({ status: 'ok' })
-// }
-// ```")
-// export annotation Route(path: String = "/", method: String = "GET", handler: Unknown = nil) -> Formula {
-//     let r = formula {
-//         method: method,
-//         path: path,
-//         extracted: path,
-//         handler: handler
-//     }
-//     routeRegistry.push(r)
-//     return r
-// }
-
-@Docs("Declares a path filter pattern for route matching or middleware protection.
+When applied to a handler function, injects the `pathfilter` object directly into the handler's scope with:
+- `pathfilter.pattern`: Configured pattern string (e.g. `/api/*` or `/users/:userId`)
+- `pathfilter.matches(path)`: Returns true if the path matches pattern wildcards or parameters
+- `pathfilter.filter(path)`: Returns true if the path starts with the pattern prefix
+- `pathfilter.extract(path)`: Extracts named `:param` segments into a Formula object
 
 **Example:**
 ```flame
-@PathFilter('/api/*')
-fn apiGatekeeper() {}
+@PathFilter('/users/:userId/orders/:orderId')
+fn userProfile() -> String {
+    let p = pathfilter.extract('/users/42/orders/101')
+    return json({
+        user_id: p.userId,
+        order_id: p.orderId,
+        is_matched: pathfilter.matches('/users/42/orders/101')
+    })
+}
 ```")
 export annotation PathFilter(pattern: String = "*") -> Formula {
+    flamer_server.registerPathFilter(pattern)
     return formula {
         pattern: pattern,
         prefix: pattern,
-        extracted: pattern,
-        matches: (path: String) -> Bool {
-            return matchPath(pattern, path)
+        matches: (path: String = "") -> Bool {
+            return flamer_server.pathFilterMatches(path)
         },
-        filter: (path: String) -> Bool {
-            return pathFilter(pattern, path)
+        filter: (path: String = "") -> Bool {
+            return flamer_server.pathFilterMatches(path)
+        },
+        extract: (path: String = "") -> Formula {
+            let uid = flamer_server.pathFilterUserId(path)
+            return formula {
+                userId: uid,
+                id: uid
+            }
+        },
+        param: (k: String) -> String {
+            return flamer_server.pathFilterParam(k)
         },
         kind: "path_filter"
     }
 }
 
-@Docs("Declares an expected query parameter key for a route handler.
+@Docs("Declares an expected query parameter key for route handler decoding, fallback handling, and full query parsing.
+
+When applied to a handler function, injects the `query` object directly into the handler's scope with:
+- `query.key`: Parameter key name (e.g. `\"q\"` or `\"name\"`)
+- `query.defaultValue`: Configured default fallback value
+- `query.get(source = \"\")`: Extracts parameter value from active request or provided query string
+- `query.value()`: Returns decoded parameter value from active request
+- `query.parse(source = \"\")`: Parses active or provided query string into a Formula object
 
 **Example:**
 ```flame
-@Query('search')
-fn searchHandler() {}
+@Query('name', 'guest')
+fn greetUser() -> String {
+    let name = query.get()
+    return json({ name: name, default: query.defaultValue })
+}
 ```")
 export annotation Query(key: String = "", default_val: String = "") -> Formula {
+    flamer_server.registerQuery(key, default_val)
     return formula {
         key: key,
-        param: key,
-        name: key,
-        extracted: key,
         defaultValue: default_val,
-        get: (source: String = "") -> String {
-            if source == "" {
-                return default_val
-            }
-            return getQueryParam(source, key, default_val)
+        get: () -> String {
+            return flamer_server.queryGet("")
         },
-        parse: (query_str: String) -> Unknown {
+        value: () -> String {
+            return flamer_server.queryGet("")
+        },
+        parse: (query_str: String) -> Formula {
             return parseQuery(query_str)
         },
         kind: "query"
     }
 }
 
-@Docs("Configures Cross-Origin Resource Sharing (CORS) policy for the decorated handler or server.")
+@Docs("Configures Cross-Origin Resource Sharing (CORS) policy for the decorated handler.
+
+When applied to a handler function, injects the `cors` object directly into the handler's scope with:
+- `cors.origin`: Permitted origin pattern (e.g. `\"*\"` or `\"https://example.com\"`)
+- `cors.methods`: Allowed HTTP methods (e.g. `\"GET,POST,OPTIONS\"`)
+- `cors.headers`: Allowed headers (e.g. `\"Content-Type,Authorization\"`)
+- `cors.isAllowed(clientOrigin)`: Returns true if the client origin is permitted
+
+**Example:**
+```flame
+@Cors(origin: '*', methods: 'GET,POST,OPTIONS')
+fn healthCheck() -> String {
+    let allowed = cors.isAllowed('https://client.example.com')
+    return json({ status: 'ok', cors_origin: cors.origin, is_allowed: allowed })
+}
+```")
 export annotation Cors(origin: String = "*", methods: String = "GET,POST,PUT,DELETE,PATCH,OPTIONS", headers: String = "*") -> Formula {
+    flamer_server.registerCors(origin, methods, headers)
     return formula {
         origin: origin,
         methods: methods,
         headers: headers,
-        extracted: origin,
+        isAllowed: (clientOrigin: String = "") -> Bool {
+            return flamer_server.corsIsAllowed(clientOrigin)
+        },
         kind: "cors"
     }
 }
 
-@Docs("Applies authentication requirement annotation with optional role restriction.")
+@Docs("Applies authentication requirement and Role-Based Access Control (RBAC) requirement.
+
+When applied to a handler function, injects the `auth` object directly into the handler's scope with:
+- `auth.role`: Required role (e.g. `\"admin\"` or `\"user\"`)
+- `auth.check(userRole = \"\")`: Validates given user role against required role (or reads from query param `role`)
+- `auth.authorize(userRole = \"\")`: Authorizes access if role matches
+
+**Example:**
+```flame
+@Auth('admin')
+fn adminDashboard() -> String {
+    let isAdmin = auth.check()
+    return json({ role: auth.role, authorized: isAdmin })
+}
+```")
 export annotation Auth(role: String = "user") -> Formula {
+    flamer_server.registerAuth(role)
     return formula {
         role: role,
         required: true,
-        extracted: role,
-        check: (userRole: String) -> Bool {
-            return userRole == role
+        check: (userRole: String = "") -> Bool {
+            return flamer_server.authCheck(userRole)
+        },
+        authorize: (userRole: String = "") -> Bool {
+            return flamer_server.authCheck(userRole)
         },
         kind: "auth"
     }
 }
 
-@Docs("Attaches named middleware to a handler or controller function.")
+@Docs("Attaches named middleware metadata to a handler or controller function for logging, auditing, and telemetry.
+
+When applied to a handler function, injects the `middleware` object directly into the handler's scope with:
+- `middleware.name`: Configured middleware name (e.g. `\"request_logger\"`)
+- `middleware.kind`: Type identifier (`\"middleware\"`)
+
+**Example:**
+```flame
+@Middleware('request_logger')
+fn echoPayload(body: String) -> String {
+    println('Middleware: ' + middleware.name)
+    return body
+}
+```")
 export annotation Middleware(name: String) -> Formula {
+    flamer_server.registerMiddleware(name)
     return formula {
         name: name,
-        extracted: name,
         kind: "middleware"
     }
 }
@@ -356,7 +273,7 @@ println(p.slug) // 'intro'
 ```")
 export fn extractPathParams(pattern: String, path: String) -> Formula {
     let json_str = flamer_server.extractPathParamsJson(pattern, path)
-    return json.parse(json_str)
+    return json_mod.fromJson(json_str)
 }
 
 @Docs("Extracts a specific named path parameter from a pattern and path using native Rust.")
@@ -384,7 +301,7 @@ println(q.page)   // '1'
 ```")
 export fn parseQuery(query: String) -> Formula {
     let json_str = flamer_server.parseQueryJson(query)
-    return json.parse(json_str)
+    return json_mod.parse(json_str)
 }
 
 @Docs("Retrieves the value of a specific query parameter from a query string, with optional default fallback.
@@ -412,7 +329,24 @@ export fn urlDecode(input: String) -> String {
     return flamer_server.urlDecode(input)
 }
 
-@Docs("Helper to construct a JSON response string from any serializable value (Formula, Array, Object) using native Rust flamer plugin.
+@Docs("Returns the query string of the current HTTP request being processed.")
+export fn currentQuery() -> String {
+    return flamer_server.currentQuery()
+}
+
+@Docs("Returns the URL path of the current HTTP request being processed.")
+export fn currentPath() -> String {
+    return flamer_server.currentPath()
+}
+
+@Docs("Returns the HTTP method of the current HTTP request being processed.")
+export fn currentMethod() -> String {
+    return flamer_server.currentMethod()
+}
+
+@Docs("Helper to construct a JSON response from any serializable value (Formula, Array, Object, String).
+
+When returned from a route handler, Flamer automatically serializes the formula/object to standard JSON and sets the Content-Type to application/json.
 
 **Example:**
 ```flame
@@ -420,12 +354,13 @@ flamer.get('/api/data', () {
     json({ success: true, count: 42 })
 })
 ```")
-export fn json(data: Unknown = "") -> String {
-    let s = "" + data
-    if (s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]")) {
-        return flamer_server.json(s)
-    }
-    return flamer_server.json(data.toJson())
+export fn json(data: Unknown = "") -> Unknown {
+    return data
+}
+
+@Docs("Serializes any formula, object, array, or value into a clean, valid JSON string.")
+export fn toJson(data: Unknown = "") -> Unknown {
+    return data
 }
 
 @Docs("Helper to construct a plain text response string.

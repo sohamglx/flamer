@@ -172,15 +172,111 @@ Quickly return formatted responses from your handlers:
 
 ---
 
-## Route & Filter Annotations
+## Handler Helper Annotations
 
-In addition to programmatic routing, `flamer` exports annotations to annotate handlers:
+`flamer` provides powerful annotations that you place directly on top of your handler functions. These annotations automatically inject configured helper objects into the local scope of your handler:
 
-- `@PathFilter(pattern = "*")` - Attaches path filter metadata
-- `@Query(key = "")` - Declares required query parameter
-- `@Cors(origin = "*", methods = "GET,POST,PUT,DELETE,OPTIONS")` - Declares CORS policy
-- `@Auth(role = "user")` - Restricts endpoint access by role
-- `@Middleware(name = "logger")` - Binds named middleware to a handler
+### 1. `@PathFilter` — Dynamic Path Matching & Parameter Extraction
+
+Injects `pathfilter` into the handler's scope with:
+- `pathfilter.pattern`: The route pattern string (e.g. `/users/:userId`)
+- `pathfilter.extract(path = "")`: Extracts named `:param` segments into a Formula. When called with no arguments, extracts dynamically from the active request URL!
+- `pathfilter.matches(path = "")`: Checks if the active request path (or provided path) matches the pattern
+- `pathfilter.filter(path = "")`: Checks if the active request path (or provided path) starts with the prefix filter
+
+```flame
+@PathFilter("/users/:userId")
+fn getUserProfile() -> String {
+    // Automatically extracts the userId parameter from the incoming HTTP request path!
+    // Visiting /users/100 -> p.userId is "100"
+    // Visiting /users/alice -> p.userId is "alice"
+    let p = pathfilter.extract()
+    let isMatched = pathfilter.matches()
+
+    return json({
+        pattern: pathfilter.pattern,
+        matched: isMatched,
+        userId: p.userId
+    })
+}
+```
+
+### 2. `@Query` — Query String Parameter Decoding
+
+Injects `query` into the handler's scope with:
+- `query.key`: Parameter key name (e.g. `\"name\"`)
+- `query.defaultValue`: Fallback default value (e.g. `\"guest\"`)
+- `query.get(source = "")`: Extracts parameter value from the active request URL query (e.g. `?name=hello`) or returns `defaultValue` if omitted
+- `query.value()`: Shorthand to return the active request's parameter value
+- `query.parse(source = "")`: Parses the active or provided query string into a Formula object
+
+```flame
+@Query("name", "guest")
+fn getName() -> String {
+    // Automatically extracts ?name=... from the incoming HTTP request URL!
+    // Visiting /n?name=hello -> name is "hello"
+    // Visiting /n           -> name is "guest"
+    let name = query.get()
+
+    return json({
+        query_key: query.key,
+        default_value: query.defaultValue,
+        name: name
+    })
+}
+```
+
+### 3. `@Auth` — Role-Based Access Control (RBAC)
+
+Injects `auth` into the handler's scope with:
+- `auth.role`: Configured required role
+- `auth.check(userRole)`: Validates given user role against required role
+- `auth.authorize(userRole)`: Authorizes access if role matches
+
+```flame
+@Auth("admin")
+fn adminOnly() -> String {
+    let isAdmin = auth.check("admin")
+    return json({
+        required_role: auth.role,
+        is_admin: isAdmin
+    })
+}
+```
+
+### 4. `@Cors` — Cross-Origin Resource Sharing Policy
+
+Injects `cors` into the handler's scope with:
+- `cors.origin`: Permitted origin pattern
+- `cors.methods`: Allowed HTTP methods
+- `cors.headers`: Allowed headers
+- `cors.isAllowed(clientOrigin)`: Checks if a client origin is permitted
+
+```flame
+@Cors(origin: "*", methods: "GET,POST,OPTIONS")
+fn healthCheck() -> String {
+    let allowed = cors.isAllowed("https://client.example.com")
+    return json({
+        status: "ok",
+        origin: cors.origin,
+        allowed: allowed
+    })
+}
+```
+
+### 5. `@Middleware` — Middleware Metadata & Telemetry
+
+Injects `middleware` into the handler's scope with:
+- `middleware.name`: Configured middleware name
+- `middleware.kind`: Type identifier (`"middleware"`)
+
+```flame
+@Middleware("telemetry_logger")
+fn echoPayload(body: String) -> String {
+    println($"[Middleware: {middleware.name}] Handled payload: {body}")
+    return body
+}
+```
 
 ---
 
