@@ -34,11 +34,11 @@ import flamer
 async fn main() {
     // Route shortcuts
     flamer.get("/", () {
-        flamer.html("<h1>Welcome to Flamer!</h1>")
+        html("<h1>Welcome to Flamer!</h1>")
     })
 
     flamer.get("/api/users", () {
-        flamer.json(["Alice", "Bob", "Charlie"])
+        json(["Alice", "Bob", "Charlie"])
     })
 
     flamer.post("/api/echo", (body) {
