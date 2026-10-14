@@ -36,17 +36,39 @@ package flamer
 import native.flamer_server
 import std.json as json_mod
 
-@Docs("Helper function to create a new Response object with body, status code, and content type.
+export struct RouteResponse {
+    __flamer_response: Bool,
+    body: String,
+    status: Int,
+    content_type: String,
+    location: String
+}
+
+fn routeResponse(body: String, status: Int, contentType: String, location: String = "") -> Formula {
+    let response = RouteResponse {
+        __flamer_response: true,
+        body: body,
+        status: status,
+        content_type: contentType,
+        location: location
+    }
+    return formula {
+        __flamer_response: response.__flamer_response,
+        body: response.body,
+        status: response.status,
+        content_type: response.content_type,
+        location: response.location
+    }
+}
+
+@Docs("Creates a structured RouteResponse with body, status code, and content type.
 
 **Example:**
 ```flame
 let res = response('Hello World', 200, 'text/plain')
 ```")
-export fn response(body: String, status: Int = 200, contentType: String = "text/plain") -> Response {
-    let mut res = Response.new(body)
-    res.setStatus(status)
-    res.setContentType(contentType)
-    return res
+export fn response(body: String, status: Int = 200, contentType: String = "text/plain") -> Formula {
+    return routeResponse(body, status, contentType)
 }
 
 @Docs("Initializes and configures a Flamer Server with optional port and host.
@@ -89,6 +111,19 @@ export fn server(port: Int = 3000, host: String = "127.0.0.1") -> FlamerServer {
 export fn init() -> FlamerServer {
     let mut s = flamer_server.init()
     return s
+}
+
+@Docs("Wraps a route handler with a typed JSON body decoder. The decoder receives parsed JSON and returns the request struct expected by the handler. Optionally pass comma-separated required string field names; requests missing those fields or supplying non-string values receive HTTP 400.")
+export fn jsonBody(decoder: Unknown, handler: Unknown, requiredStringFields: String = "") -> Unknown {
+    return (body: String) -> Unknown {
+        if !json_mod.valid(body) {
+            return badRequest("Invalid JSON request body")
+        }
+        if requiredStringFields != "" && !flamer_server.hasStringFields(body, requiredStringFields) {
+            return badRequest("JSON request body is missing required string fields")
+        }
+        return handler(decoder(json_mod.parse(body)))
+    }
 }
 
 @Docs("Declares a path filter pattern for route matching, prefix checking, or named parameter extraction.
@@ -387,28 +422,19 @@ export fn html(content: String = "") -> String {
     return flamer_server.html(content)
 }
 
-@Docs("Helper to construct a redirect response formula with HTTP 302 or 301.")
+@Docs("Helper to construct a redirect response with HTTP 302 or 301.")
 export fn redirect(url: String, code: Int = 302) -> Formula {
-    return formula {
-        status: code,
-        location: url,
-        headers: formula {
-            Location: url
-        }
-    }
+    return routeResponse("", code, "text/plain", url)
 }
 
-@Docs("Helper to construct a structured status response formula.
+@Docs("Creates a structured response with the supplied HTTP status and body.
 
 **Example:**
 ```flame
 status(204, 'No Content')
 ```")
 export fn status(code: Int, body: String = "") -> Formula {
-    return formula {
-        status: code,
-        body: body
-    }
+    return routeResponse(body, code, "text/plain")
 }
 
 @Docs("Helper to construct a 200 OK response.")
@@ -416,50 +442,32 @@ export fn ok(body: String = "OK") -> String {
     return body
 }
 
-@Docs("Helper to construct a 201 Created response formula.")
+@Docs("Creates a structured HTTP 201 Created response.")
 export fn created(body: String = "Created") -> Formula {
-    return formula {
-        status: 201,
-        body: body
-    }
+    return routeResponse(body, 201, "text/plain")
 }
 
-@Docs("Helper to construct a 400 Bad Request error response formula.")
+@Docs("Creates a structured HTTP 400 Bad Request response.")
 export fn badRequest(message: String = "Bad Request") -> Formula {
-    return formula {
-        status: 400,
-        error: message
-    }
+    return routeResponse(message, 400, "text/plain")
 }
 
-@Docs("Helper to construct a 401 Unauthorized error response formula.")
+@Docs("Creates a structured HTTP 401 Unauthorized response.")
 export fn unauthorized(message: String = "Unauthorized") -> Formula {
-    return formula {
-        status: 401,
-        error: message
-    }
+    return routeResponse(message, 401, "text/plain")
 }
 
-@Docs("Helper to construct a 403 Forbidden error response formula.")
+@Docs("Creates a structured HTTP 403 Forbidden response.")
 export fn forbidden(message: String = "Forbidden") -> Formula {
-    return formula {
-        status: 403,
-        error: message
-    }
+    return routeResponse(message, 403, "text/plain")
 }
 
-@Docs("Helper to construct a 404 Not Found error response formula.")
+@Docs("Creates a structured HTTP 404 Not Found response.")
 export fn notFound(message: String = "Not Found") -> Formula {
-    return formula {
-        status: 404,
-        error: message
-    }
+    return routeResponse(message, 404, "text/plain")
 }
 
-@Docs("Helper to construct a 500 Internal Server Error response formula.")
+@Docs("Creates a structured HTTP 500 Internal Server Error response.")
 export fn internalError(message: String = "Internal Server Error") -> Formula {
-    return formula {
-        status: 500,
-        error: message
-    }
+    return routeResponse(message, 500, "text/plain")
 }
