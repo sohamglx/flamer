@@ -113,13 +113,19 @@ export fn init() -> FlamerServer {
     return s
 }
 
-@Docs("Wraps a route handler with a typed JSON body decoder. The decoder receives parsed JSON and returns the request struct expected by the handler. Optionally pass comma-separated required string field names; requests missing those fields or supplying non-string values receive HTTP 400.")
-export fn jsonBody(decoder: Unknown, handler: Unknown, requiredStringFields: String = "") -> Unknown {
-    return (body: String) -> Unknown {
+@Docs("Wraps a route handler with a typed JSON body decoder. The decoder receives parsed JSON and returns the request struct expected by the handler. Optionally pass required string field names as an array; requests missing those fields or supplying non-string values receive HTTP 400.")
+export fn jsonBody(decoder: (), handler: (), requiredStringFields: [String] = []) -> () {
+    return (body: String) -> Formula {
         if !json_mod.valid(body) {
             return badRequest("Invalid JSON request body")
         }
-        if requiredStringFields != "" && !flamer_server.hasStringFields(body, requiredStringFields) {
+        let mut fieldsValid = true
+        for field in requiredStringFields {
+            if !flamer_server.hasStringField(body, field) {
+                fieldsValid = false
+            }
+        }
+        if !fieldsValid {
             return badRequest("JSON request body is missing required string fields")
         }
         return handler(decoder(json_mod.parse(body)))
