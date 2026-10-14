@@ -532,6 +532,31 @@ async fn auto_content_type_middleware(req: AxumRequest, next: Next) -> AxumRespo
         Err(_) => return AxumResponse::from_parts(parts, Body::from(bytes)),
     };
 
+    match decode_route_response(text_content) {
+        Ok(Some(route_response)) => {
+            parts.status = route_response.status;
+            parts
+                .headers
+                .insert(header::CONTENT_TYPE, route_response.content_type);
+            if let Some(location) = route_response.location {
+                parts.headers.insert(header::LOCATION, location);
+            }
+            let response_body = Bytes::from(route_response.body);
+            parts.headers.insert(
+                header::CONTENT_LENGTH,
+                HeaderValue::from(response_body.len()),
+            );
+            return AxumResponse::from_parts(parts, Body::from(response_body));
+        }
+        Ok(None) => {}
+        Err(error) => {
+            eprintln!("[flamer response error] {}", error);
+            let mut error_response = AxumResponse::new(Body::from("Invalid route response"));
+            *error_response.status_mut() = axum::http::StatusCode::INTERNAL_SERVER_ERROR;
+            return error_response;
+        }
+    }
+
     // Check for explicit HTML marker from flamer.html()
     if let Some(rest) = text_content.strip_prefix("<!--flamer:html-->") {
         parts.headers.insert(
@@ -593,6 +618,59 @@ async fn auto_content_type_middleware(req: AxumRequest, next: Next) -> AxumRespo
     AxumResponse::from_parts(parts, Body::from(bytes))
 }
 
+struct DecodedRouteResponse {
+    status: axum::http::StatusCode,
+    body: String,
+    content_type: HeaderValue,
+    location: Option<HeaderValue>,
+}
+
+fn decode_route_response(content: &str) -> Result<Option<DecodedRouteResponse>, String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(content) else {
+        return Ok(None);
+    };
+    let Some(object) = value.as_object() else {
+        return Ok(None);
+    };
+    if object.get("__flamer_response") != Some(&serde_json::Value::Bool(true)) {
+        return Ok(None);
+    }
+
+    let status = object
+        .get("status")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| u16::try_from(value).ok())
+        .and_then(|value| axum::http::StatusCode::from_u16(value).ok())
+        .ok_or_else(|| "route response has an invalid HTTP status".to_string())?;
+    let body = object
+        .get("body")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "route response body must be a string".to_string())?
+        .to_string();
+    let content_type = object
+        .get("content_type")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "route response content_type must be a string".to_string())
+        .and_then(|value| {
+            HeaderValue::from_str(value)
+                .map_err(|error| format!("invalid route response content_type: {}", error))
+        })?;
+    let location = object
+        .get("location")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(HeaderValue::from_str)
+        .transpose()
+        .map_err(|error| format!("invalid route response location: {}", error))?;
+
+    Ok(Some(DecodedRouteResponse {
+        status,
+        body,
+        content_type,
+        location,
+    }))
+}
+
 /// Parses a query string into a JSON object string (e.g. `{"key":"value"}`).
 #[flame(rename = "parseQueryJson")]
 pub fn parse_query_json(query: String) -> String {
@@ -602,6 +680,23 @@ pub fn parse_query_json(query: String) -> String {
         map.insert(k.into_owned(), v.into_owned());
     }
     serde_json::to_string(&map).unwrap_or_else(|_| "{}".to_string())
+}
+
+/// Checks that a JSON object contains all comma-separated fields as strings.
+#[flame(rename = "hasStringFields")]
+pub fn has_string_fields(body: String, fields: String) -> bool {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&body) else {
+        return false;
+    };
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+
+    fields
+        .split(',')
+        .map(str::trim)
+        .filter(|field| !field.is_empty())
+        .all(|field| object.get(field).is_some_and(serde_json::Value::is_string))
 }
 
 /// Extracts a specific parameter from a URL query string by key.
@@ -1061,5 +1156,59 @@ pub fn cors_is_allowed(client_origin: String) -> bool {
 pub fn register_middleware(name: String) {
     if let Ok(mut state) = ANNOTATION_STATE.write() {
         state.middleware_name = name;
+    }
+}
+
+#[cfg(test)]
+mod route_response_tests {
+    use super::{decode_route_response, has_string_fields};
+
+    #[test]
+    fn validates_required_json_string_fields() {
+        assert!(has_string_fields(
+            r#"{"username":"alice","password":"secret"}"#.to_string(),
+            "username,password".to_string()
+        ));
+        assert!(!has_string_fields(
+            r#"{"username":"alice"}"#.to_string(),
+            "username,password".to_string()
+        ));
+        assert!(!has_string_fields(
+            r#"{"username":42,"password":"secret"}"#.to_string(),
+            "username,password".to_string()
+        ));
+        assert!(!has_string_fields(
+            "[]".to_string(),
+            "username,password".to_string()
+        ));
+    }
+
+    #[test]
+    fn decodes_structured_route_response() {
+        let response = decode_route_response(
+            r#"{"__flamer_response":true,"body":"created","status":201,"content_type":"text/plain","location":""}"#,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(response.status.as_u16(), 201);
+        assert_eq!(response.body, "created");
+        assert_eq!(response.content_type, "text/plain");
+        assert!(response.location.is_none());
+    }
+
+    #[test]
+    fn leaves_regular_json_payloads_unchanged() {
+        assert!(decode_route_response(r#"{"status":201,"body":"data"}"#)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn rejects_invalid_structured_route_response() {
+        assert!(decode_route_response(
+            r#"{"__flamer_response":true,"body":"bad","status":99999,"content_type":"text/plain","location":""}"#
+        )
+        .is_err());
     }
 }
