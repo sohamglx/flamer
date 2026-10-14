@@ -42,7 +42,7 @@ async fn main() {
     })
 
     flamer.post("/api/echo", (body) {
-        return body
+        return json(body)
     })
 
     await flamer.listen()
@@ -58,7 +58,7 @@ await main()
 `flamer` provides route shortcut methods matching standard HTTP verbs:
 
 - `flamer.get(path, handler)` - Registers a GET endpoint
-- `flamer.post(path, handler)` - Registers a POST endpoint (passes incoming body payload to handler)
+- `flamer.post(path, handler)` - Registers a POST endpoint (passes the raw body to handler)
 - `flamer.put(path, handler)` - Registers a PUT endpoint (passes incoming body payload to handler)
 - `flamer.delete(path, handler)` - Registers a DELETE endpoint
 - `flamer.patch(path, handler)` - Registers a PATCH endpoint (passes incoming body payload to handler)
@@ -66,6 +66,34 @@ await main()
 - `flamer.options(path, handler)` - Registers an OPTIONS endpoint
 - `flamer.trace(path, handler)` - Registers a TRACE endpoint
 - `flamer.any(path, handler)` - Matches any HTTP method
+
+For JSON endpoints, use `jsonBody(decoder, handler)`. The package validates and
+parses the JSON request body, the decoder constructs the request struct, and
+the handler receives that typed struct (not a string):
+
+```flame
+struct CreateUser {
+    username: String,
+    password: String
+}
+
+fn decodeCreateUser(data: Formula) -> CreateUser {
+    return CreateUser {
+        username: data.username,
+        password: data.password
+    }
+}
+
+fn createUser(body: CreateUser) -> Formula {
+    return json({ created: body.username })
+}
+
+flamer.post("/users", jsonBody(decodeCreateUser, createUser, ["username", "password"]))
+```
+
+The optional third argument is an array of required string field names. Invalid
+JSON, missing fields, or non-string values are returned as HTTP 400 without
+invoking the handler.
 
 ---
 
@@ -160,15 +188,20 @@ Quickly return formatted responses from your handlers:
 | `json(data)` | Formats Formula / Array as JSON string | `json({ ok: true })` |
 | `text(msg)` | Plain text response | `text("OK")` |
 | `html(markup)` | HTML response string | `html("<h1>Title</h1>")` |
-| `redirect(url, code)` | Redirect response formula (default: 302) | `redirect("/login")` |
-| `status(code, body)` | Structured HTTP status formula | `status(204, "")` |
+| `response(body, status, contentType)` | Structured response with HTTP status and content type | `response("Created", 201, "text/plain")` |
+| `redirect(url, code)` | Redirect response (default: 302) | `redirect("/login")` |
+| `status(code, body)` | Response with the specified HTTP status | `status(204, "")` |
 | `ok(msg)` | 200 OK text response | `ok("Success")` |
-| `created(data)` | 201 Created formula | `created({ id: 101 })` |
-| `badRequest(err)` | 400 Bad Request error formula | `badRequest("Invalid email")` |
-| `unauthorized(err)`| 401 Unauthorized error formula | `unauthorized("Auth required")` |
-| `forbidden(err)` | 403 Forbidden error formula | `forbidden("Access denied")` |
-| `notFound(err)` | 404 Not Found error formula | `notFound("Item missing")` |
-| `internalError(err)`| 500 Internal Server Error formula | `internalError("Database down")` |
+| `created(msg)` | 201 Created response | `created("User created")` |
+| `badRequest(err)` | 400 Bad Request response | `badRequest("Invalid email")` |
+| `unauthorized(err)`| 401 Unauthorized response | `unauthorized("Auth required")` |
+| `forbidden(err)` | 403 Forbidden response | `forbidden("Access denied")` |
+| `notFound(err)` | 404 Not Found response | `notFound("Item missing")` |
+| `internalError(err)`| 500 Internal Server Error response | `internalError("Database down")` |
+
+The structured helpers encode a `RouteResponse` object. Flamer turns it into
+the actual HTTP status, content type, body, and (for redirects) `Location`
+header rather than returning it as a serialized response body.
 
 ---
 
