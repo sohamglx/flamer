@@ -682,9 +682,9 @@ pub fn parse_query_json(query: String) -> String {
     serde_json::to_string(&map).unwrap_or_else(|_| "{}".to_string())
 }
 
-/// Checks that a JSON object contains all comma-separated fields as strings.
-#[flame(rename = "hasStringFields")]
-pub fn has_string_fields(body: String, fields: String) -> bool {
+/// Checks that a JSON object contains the requested field as a string.
+#[flame(rename = "hasStringField")]
+pub fn has_string_field(body: String, field: String) -> bool {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(&body) else {
         return false;
     };
@@ -692,11 +692,9 @@ pub fn has_string_fields(body: String, fields: String) -> bool {
         return false;
     };
 
-    fields
-        .split(',')
-        .map(str::trim)
-        .filter(|field| !field.is_empty())
-        .all(|field| object.get(field).is_some_and(serde_json::Value::is_string))
+    object
+        .get(&field)
+        .is_some_and(serde_json::Value::is_string)
 }
 
 /// Extracts a specific parameter from a URL query string by key.
@@ -1161,26 +1159,22 @@ pub fn register_middleware(name: String) {
 
 #[cfg(test)]
 mod route_response_tests {
-    use super::{decode_route_response, has_string_fields};
+    use super::{decode_route_response, has_string_field};
 
     #[test]
-    fn validates_required_json_string_fields() {
-        assert!(has_string_fields(
-            r#"{"username":"alice","password":"secret"}"#.to_string(),
-            "username,password".to_string()
-        ));
-        assert!(!has_string_fields(
+    fn validates_required_json_string_field() {
+        let body = r#"{"username":"alice","password":"secret"}"#.to_string();
+        assert!(has_string_field(body.clone(), "username".to_string()));
+        assert!(has_string_field(body, "password".to_string()));
+        assert!(!has_string_field(
             r#"{"username":"alice"}"#.to_string(),
-            "username,password".to_string()
+            "password".to_string()
         ));
-        assert!(!has_string_fields(
-            r#"{"username":42,"password":"secret"}"#.to_string(),
-            "username,password".to_string()
+        assert!(!has_string_field(
+            r#"{"username":42}"#.to_string(),
+            "username".to_string()
         ));
-        assert!(!has_string_fields(
-            "[]".to_string(),
-            "username,password".to_string()
-        ));
+        assert!(!has_string_field("[]".to_string(), "username".to_string()));
     }
 
     #[test]
